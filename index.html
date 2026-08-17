@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#fff7db" />
+  <meta name="description" content="11월 28–29일 CP 카페 공식 홈페이지" />
+  <title>CP CAFE</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <a class="skip-link" href="#main">본문 바로가기</a>
+
+  <div class="top-ticker" aria-hidden="true">
+    <div class="ticker-track">
+      <span>★ WELCOME ★</span>
+      <span>주인장이 직접 관리하는 홈페이지입니다^^</span>
+      <span>☞ 11.28 — 11.29 ☜</span>
+      <span>★ WELCOME ★</span>
+      <span>주인장이 직접 관리하는 홈페이지입니다^^</span>
+      <span>☞ 11.28 — 11.29 ☜</span>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <a class="brand" href="#home" id="brandText">CP CAFE</a>
+
+    <button class="nav-toggle" id="navToggle" type="button"
+      aria-expanded="false" aria-controls="siteNav">
+      MENU
+    </button>
+
+    <nav class="site-nav" id="siteNav" aria-label="주요 메뉴">
+      <a href="#home">HOME</a>
+      <a href="#monthly">MONTHLY MENU</a>
+      <a href="#restaurants">RESTAURANTS</a>
+      <a href="#guestbook">GUESTBOOK</a>
+      <a href="#test" id="testNavLink">TEST</a>
+      <a href="#info" id="infoNavLink">INFO</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero section" id="home">
+      <div class="hero-copy">
+        <span class="micro-label">OFFICIAL HOMEPAGE · SINCE 2026</span>
+        <h1 id="heroTitle">CP CAFE</h1>
+        <p class="hero-subtitle" id="heroSubtitle">11월 28–29일, 이틀 동안 만나요.</p>
+
+        <div class="hero-date-card" aria-label="행사 날짜">
+          <span>OPEN</span>
+          <strong id="eventDate">2026.11.28 — 11.29</strong>
+          <em>★★★★★</em>
+        </div>
+
+        <p class="hero-note" id="heroNote">
+          홈페이지는 정상적으로 작동합니다. 디자인 취향에 대해서는 책임지지 않습니다.
+        </p>
+
+        <a class="cta-button" href="#monthly">☞ 이번 달 추천 보러가기</a>
+      </div>
+
+      <div class="hero-visual">
+        <figure class="image-frame hero-frame">
+          <img id="heroImage" src="./assets/main-placeholder.svg" alt="메인 비주얼" />
+          <figcaption>★ 주인장 엄선 메인사진 ★</figcaption>
+        </figure>
+
+        <div class="stamp stamp-one">BEST<br>PAGE</div>
+        <div class="stamp stamp-two">100%<br>수제관리</div>
+      </div>
+    </section>
+
+    <section class="section monthly-section" id="monthly">
+      <div class="section-heading">
+        <span class="section-no">01</span>
+        <div>
+          <p class="eyebrow">OWNER'S PICK</p>
+          <h2 id="monthlyHeading">이번 달의 추천 메뉴</h2>
+        </div>
+      </div>
+
+      <div class="monthly-card">
+        <figure class="image-frame monthly-image-wrap">
+          <img id="monthlyImage" src="./assets/monthly-placeholder.svg" alt="이번 달 추천 메뉴" />
+          <span class="burst">이달의<br>추천!!</span>
+        </figure>
+
+        <div class="monthly-copy">
+          <p class="small-badge" id="monthlyBadge">★ AUGUST SPECIAL ★</p>
+          <h3 id="monthlyName">추천 메뉴 이름</h3>
+          <p id="monthlyDescription">
+            사진과 문구만 바꾸면 매달 새 메뉴처럼 운영할 수 있습니다.
+          </p>
+          <dl class="menu-meta">
+            <div>
+              <dt>추천도</dt>
+              <dd>★★★★★</dd>
+            </div>
+            <div>
+              <dt>주인장 코멘트</dt>
+              <dd id="monthlyComment">이번 달엔 이걸 드셔보세요^^</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="section restaurant-section" id="restaurants">
+      <div class="section-heading">
+        <span class="section-no">02</span>
+        <div>
+          <p class="eyebrow">PEOPLE'S CHOICE</p>
+          <h2>추천 맛집</h2>
+        </div>
+      </div>
+
+      <div class="restaurant-toolbar">
+        <p>
+          직접 먹어보고 좋았던 곳만 올립니다.
+          <span class="wobbly">제보 환영^^</span>
+        </p>
+        <a class="small-button" id="recommendFormLink" href="#" target="_blank" rel="noopener">
+          ☞ 나도 맛집 추천하기
+        </a>
+      </div>
+
+      <div class="restaurant-grid" id="restaurantGrid"></div>
+
+      <div class="empty-state" id="restaurantEmpty" hidden>
+        <strong>아직 등록된 맛집이 없습니다.</strong>
+        <p>제보 폼으로 보내주시면 주인장의 심사를 거쳐 추가됩니다.</p>
+      </div>
+
+      <p class="tiny-note">
+        ※ 추천 맛집 제보는 외부 폼으로 받습니다. 홈페이지 데이터 사용량에는 영향을 주지 않습니다.
+      </p>
+    </section>
+
+    <section class="section guestbook-section" id="guestbook">
+      <div class="section-heading">
+        <span class="section-no">03</span>
+        <div>
+          <p class="eyebrow">GUEST BOOK</p>
+          <h2>손님들의 한마디</h2>
+        </div>
+      </div>
+
+      <div class="guestbook-layout">
+        <form class="guestbook-form" id="guestbookForm">
+          <div class="guestbook-form-title">
+            <strong>♡ 방명록 작성 ♡</strong>
+            <span>로그인 필요 없음</span>
+          </div>
+
+          <label>
+            닉네임
+            <input id="guestName" name="name" type="text" maxlength="20"
+              autocomplete="nickname" placeholder="20자 이내" required />
+          </label>
+
+          <label>
+            한마디
+            <textarea id="guestMessage" name="message" maxlength="120"
+              rows="4" placeholder="120자 이내로 남겨주세요." required></textarea>
+          </label>
+
+          <div class="char-count"><span id="messageCount">0</span>/120</div>
+
+          <button class="submit-button" id="guestSubmit" type="submit">
+            등록하기 ☞
+          </button>
+
+          <p class="form-status" id="guestFormStatus" role="status"></p>
+        </form>
+
+        <div class="guestbook-board">
+          <div class="board-header">
+            <span>번호</span>
+            <span>작성자 / 내용</span>
+            <span>추천</span>
+          </div>
+
+          <div id="guestbookList" class="guestbook-list">
+            <div class="guestbook-loading">
+              방명록 근처에 오면 최신 글을 불러옵니다.
+            </div>
+          </div>
+
+          <div id="guestbookSentinel" class="load-sentinel" aria-hidden="true"></div>
+
+          <button class="text-button" id="guestbookRefresh" type="button">
+            새 글 확인
+          </button>
+
+          <p class="tiny-note centered">
+            최근 글부터 조금씩 불러와 Firebase 읽기 사용량을 줄입니다.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section test-section" id="test">
+      <div class="section-heading">
+        <span class="section-no">04</span>
+        <div>
+          <p class="eyebrow">CUSTOMER TYPE TEST</p>
+          <h2>손님 유형 테스트</h2>
+        </div>
+      </div>
+
+      <div class="test-card">
+        <div class="test-icon" aria-hidden="true">?</div>
+        <div>
+          <p class="small-badge">★ COMING SOON ★</p>
+          <h3 id="testTitle">당신은 어떤 손님일까요?</h3>
+          <p id="testDescription">
+            테스트 기준과 문항이 정해지면 이 영역에 바로 연결됩니다.
+          </p>
+          <button class="disabled-button" id="testButton" type="button" disabled>
+            준비중입니다^^
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section info-section" id="info">
+      <div class="section-heading">
+        <span class="section-no">05</span>
+        <div>
+          <p class="eyebrow">INFORMATION</p>
+          <h2>INFO</h2>
+        </div>
+      </div>
+
+      <div id="infoContent" class="info-grid"></div>
+
+      <div class="empty-state" id="infoEmpty">
+        <strong>행사 정보는 추후 공개됩니다.</strong>
+        <p>site-config.js에서 공개 여부와 내용을 직접 바꿀 수 있습니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <strong id="footerBrand">CP CAFE</strong>
+      <p>본 홈페이지는 모든 화면에 대충 최적화되어 있습니다.</p>
+    </div>
+    <p>Copyright ⓒ 2026. All Right Reserved.</p>
+  </footer>
+
+  <script src="./site-config.js"></script>
+  <script type="module" src="./script.js"></script>
+</body>
+</html>
