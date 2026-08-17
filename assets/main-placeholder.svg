@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1500" viewBox="0 0 1200 1500">
+<rect width="1200" height="1500" fill="#ff73bd"/>
+<rect x="70" y="70" width="1060" height="1360" fill="#fff7db" stroke="#191919" stroke-width="10"/>
+<circle cx="950" cy="300" r="150" fill="#a9ff63" stroke="#191919" stroke-width="8"/>
+<text x="110" y="330" font-family="Georgia,serif" font-size="145" font-weight="700" fill="#191919">MAIN</text>
+<text x="110" y="470" font-family="Georgia,serif" font-size="145" font-weight="700" fill="#191919">VISUAL</text>
+<text x="110" y="590" font-family="Arial,sans-serif" font-size="46" font-weight="700" fill="#191919">여기에 메인 이미지를 넣어주세요^^</text>
+<text x="800" y="315" font-family="Arial,sans-serif" font-size="44" font-weight="900" text-anchor="middle" fill="#191919">BEST!!</text>
+<path d="M140 800 H1060" stroke="#191919" stroke-width="8" stroke-dasharray="18 18"/>
+<text x="110" y="1000" font-family="Times New Roman,serif" font-size="72" font-weight="700" fill="#191919">11.28 — 11.29</text>
+<text x="110" y="1110" font-family="Times New Roman,serif" font-size="48" font-weight="700" fill="#191919">★ OFFICIAL HOMEPAGE ★</text>
+</svg>

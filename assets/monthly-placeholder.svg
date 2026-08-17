@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+<rect width="1200" height="1200" fill="#78a9ff"/>
+<rect x="70" y="70" width="1060" height="1060" fill="#fffdf4" stroke="#191919" stroke-width="10"/>
+<path d="M150 270 H1050" stroke="#191919" stroke-width="8" stroke-dasharray="16 16"/>
+<text x="600" y="500" font-family="Georgia,serif" font-size="120" font-weight="700" text-anchor="middle" fill="#191919">MONTHLY</text>
+<text x="600" y="630" font-family="Georgia,serif" font-size="120" font-weight="700" text-anchor="middle" fill="#191919">MENU</text>
+<text x="600" y="770" font-family="Arial,sans-serif" font-size="42" font-weight="700" text-anchor="middle" fill="#191919">이번 달 메뉴 이미지를 올려주세요</text>
+<circle cx="930" cy="250" r="130" fill="#ffe34f" stroke="#191919" stroke-width="8"/>
+<text x="930" y="235" font-family="Arial,sans-serif" font-size="42" font-weight="900" text-anchor="middle" fill="#191919">OWNER'S</text>
+<text x="930" y="290" font-family="Arial,sans-serif" font-size="42" font-weight="900" text-anchor="middle" fill="#191919">PICK!!</text>
+</svg>

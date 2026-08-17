@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validGuestbookCreate() {
+      return signedIn()
+        && request.resource.data.keys().hasOnly([
+          'name', 'message', 'likeCount', 'createdAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 20
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 1
+        && request.resource.data.message.size() <= 120
+        && request.resource.data.likeCount == 0
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /guestbook/{entryId} {
+      allow read: if true;
+      allow create: if validGuestbookCreate();
+
+      // 좋아요 숫자만 +1 가능.
+      // 같은 atomic transaction 안에서 현재 사용자의 like 문서가 새로 만들어져야 함.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+        && request.resource.data.likeCount == resource.data.likeCount + 1
+        && !exists(/databases/$(database)/documents/guestbook/$(entryId)/likes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/guestbook/$(entryId)/likes/$(request.auth.uid));
+
+      allow delete: if false;
+
+      match /likes/{uid} {
+        allow read: if false;
+
+        allow create: if signedIn()
+          && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
