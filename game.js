@@ -4,21 +4,28 @@
   if (!story || !Array.isArray(story.members) || !story.members.length) return;
   const $ = id => document.getElementById(id);
   const members = story.members;
-  const STORAGE_KEY = 'cp-cafe-lost-recipe-v2';
+  const STORAGE_KEY = 'cp-cafe-lost-recipe-v3';
   const validIds = members.map(m => m.id);
   const PHASES = ['chat', 'riddle', 'transition', 'done'];
   let state, storageEnabled = true;
+  let selectedMemberId = null;
 
   function fresh() {
     return {
-      version: 2, memberIndex: 0, phase: 'chat', chatTurns: 0,
+      version: 3, started: false, nickname: '', memberOrder: validIds.slice(),
+      memberIndex: 0, phase: 'chat', chatTurns: 0,
       tries: 0, messages: [], collected: [], receiptId: null,
       issuedAt: null, receiptOpened: false
     };
   }
   function validate(obj) {
-    if (!obj || obj.version !== 2 || !Number.isInteger(obj.memberIndex) || obj.memberIndex < 0 || obj.memberIndex >= members.length || !PHASES.includes(obj.phase) || !Array.isArray(obj.messages)) return null;
+    if (!obj || obj.version !== 3 || !Number.isInteger(obj.memberIndex) || obj.memberIndex < 0 || obj.memberIndex >= members.length || !PHASES.includes(obj.phase) || !Array.isArray(obj.messages)) return null;
+    if (!Array.isArray(obj.memberOrder) || obj.memberOrder.length !== validIds.length || new Set(obj.memberOrder).size !== validIds.length || !obj.memberOrder.every(id => validIds.includes(id))) return null;
+    if (typeof obj.nickname !== 'string' || obj.nickname.length > 12 || (obj.started && !obj.nickname.trim())) return null;
     const clean = fresh();
+    clean.started = !!obj.started;
+    clean.nickname = obj.nickname.trim();
+    clean.memberOrder = obj.memberOrder.slice();
     clean.memberIndex = obj.memberIndex;
     clean.phase = obj.phase;
     clean.chatTurns = Math.min(30, Math.max(0, Number(obj.chatTurns) || 0));
@@ -35,15 +42,21 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
     catch (_) { storageEnabled = false; }
   }
-  function current() { return members[state.memberIndex]; }
+  function current() { return members.find(m => m.id === state.memberOrder[state.memberIndex]) || members[0]; }
   function add(role, text, memberId = current().id) {
-    state.messages.push({role, text: String(text), memberId});
+    const message = role === 'bot' ? String(text).replaceAll('{nickname}', state.nickname) : String(text);
+    state.messages.push({role, text: message, memberId});
     if (state.messages.length > 120) state.messages = state.messages.slice(-120);
   }
-  function initialize() {
+  function initialize(memberId = null, nickname = '') {
     state = fresh();
-    add('system', `${current().name}님이 메시지를 보냈습니다`);
-    current().opening.forEach(line => add('bot', line));
+    if (validIds.includes(memberId) && nickname.trim()) {
+      state.started = true;
+      state.nickname = nickname.trim().slice(0, 12);
+      state.memberOrder = [memberId, ...validIds.filter(id => id !== memberId)];
+      add('system', `${state.nickname}님에게 ${current().name}님이 메시지를 보냈습니다`);
+      current().opening.forEach(line => add('bot', line));
+    }
     persist();
   }
   try {
@@ -74,7 +87,7 @@
   function isInfoRequest(text) { return /(카페|날짜|일정|위치|주소|특전|상품|굿즈|교환증|영수증|행사|메뉴)/.test(text); }
   function sendMessage(raw) {
     const message = String(raw || '').trim().slice(0,180);
-    if (!message || state.phase === 'transition' || state.phase === 'done') return;
+    if (!state.started || !message || state.phase === 'transition' || state.phase === 'done') return;
     add('player', message);
     const member = current();
     if (state.phase === 'chat') {
@@ -100,12 +113,12 @@
       const actual = String(story.cafe[clue.key] || '').trim();
       add('system', `♡ 발견한 쪽지 · ${clue.label}`);
       add('bot', actual || clue.fallback);
-      add('bot', member.bridge);
       if (state.memberIndex === members.length - 1) {
         state.phase = 'done';
         story.completion.forEach(line => add('bot', line));
         ensureReceipt();
       } else {
+        add('bot', '다른 친구도 재료를 찾고 있대. 이번엔 그 친구에게 답장을 보내 볼까?');
         state.phase = 'transition';
       }
     } else {
@@ -161,6 +174,13 @@
     dest.append(wrap);
   }
   function render() {
+    const starting = !state.started;
+    $('chat-shell').classList.toggle('is-starting', starting);
+    $('start-screen').setAttribute('aria-hidden', String(!starting));
+    if (starting) {
+      document.title = `${story.siteTitle} · 오늘의 대화 메뉴`;
+      return;
+    }
     const person = current();
     $('profile-emoji').textContent = person.avatar;
     $('profile-name').textContent = person.name;
@@ -182,9 +202,49 @@
     const scroll = $('conversation'); scroll.scrollTop = scroll.scrollHeight;
   }
 
+  // 첫 입장: 카페 메뉴판 모양의 멤버 선택 화면. 실제 미션과 보상은 노출하지 않습니다.
+  function renderMemberMenu() {
+    const host = $('member-menu');
+    host.replaceChildren();
+    members.forEach((member, index) => {
+      const item = create('button', 'member-menu-item');
+      item.type = 'button';
+      item.dataset.member = member.id;
+      item.setAttribute('aria-pressed', String(selectedMemberId === member.id));
+      if (selectedMemberId === member.id) item.classList.add('selected');
+      item.append(create('span', 'menu-avatar', member.avatar));
+      const details = create('span', 'menu-member-details');
+      details.append(create('span', 'menu-member-code', `CHAT MENU ${String(index+1).padStart(2,'0')}`));
+      details.append(create('strong', 'menu-member-name', member.name));
+      details.append(create('span', 'menu-member-subtitle', member.menuSubtitle || '함께 이야기 나누기 ♡'));
+      item.append(details);
+      item.append(create('span', 'menu-member-check', selectedMemberId === member.id ? '✓' : '＋'));
+      item.addEventListener('click', () => {
+        selectedMemberId = member.id;
+        renderMemberMenu();
+        updateStartButton();
+      });
+      host.append(item);
+    });
+  }
+  function updateStartButton() {
+    $('start-button').disabled = !(selectedMemberId && $('nickname-input').value.trim());
+  }
+  $('nickname-input').addEventListener('input', updateStartButton);
+  $('start-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const nickname = $('nickname-input').value.trim();
+    if (!selectedMemberId || !nickname) return;
+    initialize(selectedMemberId, nickname);
+    render();
+    $('reply-input').focus();
+  });
+  renderMemberMenu();
+
   const ticketDialog = $('ticket-dialog');
   function populateTicket() {
     ensureReceipt();
+    $('ticket-nickname').textContent = state.nickname;
     $('ticket-number').textContent = state.receiptId;
     $('ticket-date').textContent = state.issuedAt;
     $('ticket-ingredients').textContent = '설탕 · 우유 · 딸기';
@@ -226,8 +286,8 @@
     write('잃어버린 레시피를 완성해 주셔서 고마워요!',393,25,'#668ca8','500');
     rounded(300,440,300,137,16,'#e9f6ff','#83bde4');
     write('MISSION COMPLETE',495,27,'#428bc0','900');write('✓',550,45,'#4caa80','900');
-    const rows=[['찾은 재료','설탕 · 우유 · 딸기'],['선물',story.receipt.gift],['발행 번호',state.receiptId],['발행일',state.issuedAt]];
-    let y=645;for(const [label,value] of rows){ctx.strokeStyle='#c4dfed';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(160,y+29);ctx.lineTo(740,y+29);ctx.stroke();ctx.textAlign='left';ctx.fillStyle='#84a4bc';ctx.font='500 23px "Noto Sans KR", "Malgun Gothic", sans-serif';ctx.fillText(label,160,y);ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font='bold 24px "Noto Sans KR", "Malgun Gothic", sans-serif';let shown=String(value);if(ctx.measureText(shown).width>380){ctx.font='bold 19px "Noto Sans KR", "Malgun Gothic", sans-serif';}if(ctx.measureText(shown).width>420){shown=shown.slice(0,18)+'…';}ctx.fillText(shown,740,y);y+=92;}
+    const rows=[['닉네임',state.nickname],['찾은 재료','설탕 · 우유 · 딸기'],['선물',story.receipt.gift],['발행 번호',state.receiptId],['발행일',state.issuedAt]];
+    let y=615;for(const [label,value] of rows){ctx.strokeStyle='#c4dfed';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(160,y+26);ctx.lineTo(740,y+26);ctx.stroke();ctx.textAlign='left';ctx.fillStyle='#84a4bc';ctx.font='500 23px "Noto Sans KR", "Malgun Gothic", sans-serif';ctx.fillText(label,160,y);ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font='bold 24px "Noto Sans KR", "Malgun Gothic", sans-serif';let shown=String(value);if(ctx.measureText(shown).width>380){ctx.font='bold 19px "Noto Sans KR", "Malgun Gothic", sans-serif';}if(ctx.measureText(shown).width>420){shown=shown.slice(0,18)+'…';}ctx.fillText(shown,740,y);y+=84;}
     write('✦  ✦  ✦',1030,28,'#edc267');
     write('시연용 · 실제 현장 교환권이 아닙니다',1090,22,'#996c3f','700');
     canvas.toBlob(blob => {if(blob)saveFile(blob,'선물교환증_시연용.png');},'image/png');
@@ -246,7 +306,7 @@
   ticketDialog.addEventListener('click',event => {if(event.target===ticketDialog)ticketDialog.close();});
   $('ticket-download').addEventListener('click',downloadTicket);
   $('ticket-print').addEventListener('click',() => window.print());
-  $('reset-game').addEventListener('click',() => {toggleSettings(false);if(!confirm('지금까지의 대화와 교환증을 지우고 처음부터 시작할까요?'))return;initialize();render();});
+  $('reset-game').addEventListener('click',() => {toggleSettings(false);if(!confirm('지금까지의 대화와 교환증을 지우고 닉네임·멤버 선택부터 다시 시작할까요?'))return;selectedMemberId=null;$('nickname-input').value='';renderMemberMenu();updateStartButton();initialize();render();});
   $('save-export').addEventListener('click',() => {toggleSettings(false);saveFile(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),'cp-cafe-story-save.json');});
   $('save-import').addEventListener('click',() => {toggleSettings(false);$('save-file').click();});
   $('save-file').addEventListener('change',async event => {
