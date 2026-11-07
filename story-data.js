@@ -2,7 +2,7 @@
  * ✿ 제작자 편집 전용 파일 — 다른 코드 수정 없이 여기서 내용을 바꿀 수 있습니다.
  * 1) 캐릭터 이름 / 동물 / 메뉴 이름: members의 name, avatar, menuTitle
  * 2) 말투와 자유대화 응답: opening, voice (각 멤버마다 독립)
- * 3) 재료 개수: ingredients 배열의 항목을 추가·삭제하면 자동 반영
+ * 3) 매 게임마다 각 멤버의 재료 중 requiredIngredients개를 무작위 선택합니다 (현재 4개 중 2개).
  * 4) 재료 이름 / 수색 장소 / 정답 / 대사: ingredients의 각 항목
  * 5) 행사 정보: cafe.date/location/benefit (확정 후 입력)
  * 공개된 GitHub Pages의 JS는 누구나 볼 수 있으므로 정답·비밀 공개를 기술적으로 막을 수 없습니다.
@@ -18,11 +18,11 @@ window.STORY_DATA = {
   },
   receipt: {
     gift: '시크릿 기념 선물 (시연용)',
-    message: '모든 재료를 찾아 레시피를 완성했어요. 고마워요! ♡'
+    message: '각 메뉴에서 필요한 재료를 모두 찾아줬어요. 고마워요! ♡'
   },
   members: [
     {
-      id: 'fox', name: '여우', avatar: '🦊', menuTitle: '영곰훠궈',
+      id: 'fox', name: '여우', avatar: '🦊', menuTitle: '영곰훠궈', requiredIngredients: 2,
       subtitle: '영곰훠궈 주방 · 온라인', menuSubtitle: '오늘의 메뉴 · 영곰훠궈',
       opening: [
         '{nickname}! 딱 좋은 때 왔어. 훠궈 냄비는 준비됐는데… 뭔가 잔뜩 사라진 거 있지?',
@@ -38,13 +38,13 @@ window.STORY_DATA = {
       },
       cafeUnlock: { label: '카페 일정', key: 'date', fallback: '카페 일정은 확정되는 대로 이 자리에서 알려줄게.' },
       memberComplete: [
-        '좋아, 영곰훠궈에 필요한 재료를 전부 찾았어! 네가 없었으면 냄비가 텅 빌 뻔했네.',
+        '좋아, 영곰훠궈에서 사라진 핵심 재료 두 개를 찾았어! 네가 없었으면 냄비가 텅 빌 뻔했네.',
         '아, 여기서 찾은 작은 쪽지에 날짜가 적혀 있어. 카페에서 만날 날에 관한 건가 봐.'
       ],
       ingredients: [
         {
           id:'bokchoy', name:'청경채', introTurns:2,
-          intro:'우선 냄비 옆 초록색 흔적부터 살펴보자. 누가 채소를 놓고 간 것 같아.',
+          intro:'냄비 옆에 초록색 흔적이 있어. 누가 채소를 놓고 간 것 같아.',
           searchPrompt:'칼질 소리가 들리던 곳과 양념이 있던 곳 중 어디를 먼저 볼까?',
           searchOptions:[{label:'도마 옆',right:true,reply:'맞아! 도마에 초록 잎 조각이 남아 있어.'},{label:'양념 선반',right:false,reply:'양념통은 멀쩡해. 대신 도마 쪽에 초록색이 보이는데?'}],
           clues:['잎은 짙은 초록색이고 줄기는 하얗고 통통해.', '훠궈에 넣으면 아삭하면서도 부드러워지는 채소야. 이름이 뭘까?'],
@@ -53,21 +53,21 @@ window.STORY_DATA = {
         },
         {
           id:'beef', name:'소고기', introTurns:3,
-          intro:'채소는 챙겼는데 이제 얇게 썰어 둔 주재료가 안 보여. 분명 조금 전까지 있었는데.',
+          intro:'얇게 썰어 둔 주재료가 안 보여. 분명 조금 전까지 있었는데.',
           searchPrompt:'찬 곳에 뒀을까, 아니면 조리대 아래로 굴러갔을까?',
           searchOptions:[{label:'냉장고 안',right:true,reply:'서늘한 칸에 얇은 고기 접시가 있네. 포장지가 살짝 벗겨졌어.'},{label:'조리대 서랍',right:false,reply:'거긴 집게뿐이야. 고기라면 신선하게 보관할 곳을 찾아야겠지?'}],
           clues:['얇게 저며 뜨거운 국물에 살짝 익혀 먹어.', '붉은색을 띠고 소에게서 얻는 고기야.'],
           answers:['소고기','쇠고기','우육'], hint:'이름 첫 글자가 소야. 샤브샤브에도 자주 써.',
-          success:['역시 소고기였어. 얇으니까 금방 익겠네.', '이제 씹는 맛을 더할 걸 찾아보자.']
+          success:['역시 소고기였어. 얇으니까 금방 익겠네.', '필요한 두 가지 재료를 찾았으니 오늘 훠궈 준비는 끝이야!']
         },
         {
           id:'tofu', name:'두부', introTurns:2,
-          intro:'이번엔 네모반듯한 게 사라졌어. 여기 물방울이 떨어져 있는 걸 보니 멀리 가진 않았나 봐.',
+          intro:'네모반듯한 게 사라졌어. 물방울이 떨어져 있는 걸 보니 멀리 가지는 않았나 봐.',
           searchPrompt:'젖은 흔적이 향하는 곳은 어디일까?',
           searchOptions:[{label:'물 담긴 통',right:true,reply:'맞아! 통 안에 하얀 네모 조각이 들어 있어.'},{label:'밀가루 통',right:false,reply:'거긴 가루뿐이야. 네모난 건 물에 담겨 있었던 것 같아.'}],
           clues:['콩을 갈아 굳힌 하얀 식재료야.', '부드러운 네모 모양이라 국물 맛을 잘 흡수하지.'],
           answers:['두부','tofu'], hint:'콩으로 만들고 네모지게 잘라 먹는 두 글자 음식이야.',
-          success:['두부까지 회수 완료! 국물을 한껏 머금을 거야.', '이제 마지막으로 쫄깃한 걸 챙기면 끝.']
+          success:['두부 찾았다! 국물을 한껏 머금을 거야.', '이제 마지막으로 쫄깃한 걸 챙기면 끝.']
         },
         {
           id:'noodle', name:'넓적당면', introTurns:3,
@@ -76,12 +76,12 @@ window.STORY_DATA = {
           searchOptions:[{label:'건조식품 바구니',right:true,reply:'포장지 끝에 넓적한 면이 남아 있어! 이거다.'},{label:'얼음 보관함',right:false,reply:'차갑긴 한데 찾는 건 없어. 마른 면을 두는 바구니를 확인해 보자.'}],
           clues:['익히기 전엔 단단하고 익으면 반투명해져.', '일반 당면보다 폭이 넓어서 쫀득한 식감이 특징이야.'],
           answers:['넓적당면','넙적당면','중국당면'], hint:'당면 앞에 모양을 뜻하는 두 글자가 붙는 네 글자 재료야.',
-          success:['넓적당면까지! 이제 영곰훠궈가 완성될 수 있겠어.', '한 냄비가 이렇게 여러 재료로 채워지는구나.']
+          success:['넓적당면 찾았다! 훠궈에 넣으면 쫄깃하겠는데?', '한 냄비가 이렇게 여러 재료로 채워지는구나.']
         }
       ]
     },
     {
-      id: 'rabbit', name: '토끼', avatar: '🐰', menuTitle: '필곰김밥',
+      id: 'rabbit', name: '토끼', avatar: '🐰', menuTitle: '필곰김밥', requiredIngredients: 2,
       subtitle: '필곰김밥 준비 중 · 온라인', menuSubtitle: '오늘의 메뉴 · 필곰김밥',
       opening: [
         '{nickname}! 잘 왔어. 필곰김밥을 싸려고 했는데 재료가 여기저기 흩어졌지 뭐야.',
@@ -97,7 +97,7 @@ window.STORY_DATA = {
       },
       cafeUnlock: { label: '카페 장소', key: 'location', fallback: '카페 위치는 확정되면 여기서 알려줄게!' },
       memberComplete: [
-        '됐다! 필곰김밥 완성! 우리가 재료를 전부 찾았잖아.',
+        '됐다! 필곰김밥 준비 완료! 필요한 두 재료를 찾았잖아.',
         '어라, 포장지 뒤에 작은 주소 쪽지가 있네. 우리가 만나게 될 장소 이야기 같아!'
       ],
       ingredients: [
@@ -112,12 +112,12 @@ window.STORY_DATA = {
         },
         {
           id:'rice', name:'밥', introTurns:3,
-          intro:'김은 찾았는데 김 위에 펼쳐야 하는 따끈한 게 사라졌어.',
+          intro:'김 위에 펼쳐야 하는 따끈한 재료가 보이지 않아.',
           searchPrompt:'따끈따끈한 김이 나던 곳을 찾자!',
           searchOptions:[{label:'밥솥',right:true,reply:'뚜껑을 열어보니 갓 지은 하얀 알갱이가 가득하네!'},{label:'찬장',right:false,reply:'접시는 많지만 아직 따뜻한 건 없어. 밥솥을 확인해 볼까?'}],
           clues:['쌀을 물과 함께 익혀서 만든 거야.', '김 위에 얇게 펴 바르고 그 위에 속재료를 얹지.'],
           answers:['밥','쌀밥'], hint:'쌀을 지으면 두 글자가 아니라 한 글자인 이것이 돼.',
-          success:['맞아, 밥! 김 위에 고르게 펼치자.', '색깔을 더할 재료가 아직 없어.']
+          success:['맞아, 밥! 김 위에 고르게 펼치자.', '이제 김과 밥을 준비했으니 우리 김밥을 완성할 수 있겠어!']
         },
         {
           id:'pickledradish', name:'단무지', introTurns:2,
@@ -130,17 +130,17 @@ window.STORY_DATA = {
         },
         {
           id:'egg', name:'달걀지단', introTurns:3,
-          intro:'마지막은 노란색인데 단무지처럼 아삭하지는 않아. 얇게 부쳐서 길게 썰어 둔 거거든.',
+          intro:'노란 재료 하나가 안 보여. 얇게 부쳐 길게 썰어 둔 거라 단무지처럼 아삭하지는 않아.',
           searchPrompt:'노릇하게 익힌 흔적을 찾으려면 어디를 봐야 할까?',
           searchOptions:[{label:'프라이팬 옆',right:true,reply:'팬 옆에 노란 부침 조각과 뒤집개가 남아 있어!'},{label:'과일 바구니',right:false,reply:'여긴 과일뿐이야. 팬 가까이에서 냄새가 나는 것 같아.'}],
           clues:['달걀을 풀어 얇게 부친 다음 길쭉하게 썬 거야.', '김밥에서 노란 줄무늬가 되어 주지.'],
           answers:['달걀지단','계란지단','지단','달걀','계란'], hint:'달걀을 얇게 부쳐 만든 음식은 달걀 ○○이야.',
-          success:['달걀지단까지 찾았어! 이제 필곰김밥을 돌돌 말 수 있겠다.', '한 줄을 완성하는 데에도 이렇게 손이 많이 가는구나!']
+          success:['달걀지단 찾았다! 이걸 넣으면 김밥이 한층 고소해지겠어.', '한 줄을 완성하는 데에도 이렇게 손이 많이 가는구나!']
         }
       ]
     },
     {
-      id: 'dog', name: '강아지', avatar: '🐶', menuTitle: '도곰라멘',
+      id: 'dog', name: '강아지', avatar: '🐶', menuTitle: '도곰라멘', requiredIngredients: 2,
       subtitle: '도곰라멘 조리 중 · 온라인', menuSubtitle: '오늘의 메뉴 · 도곰라멘',
       opening: [
         '{nickname}, 왔구나! 도곰라멘을 준비하다가 큰일이 났어.',
@@ -156,7 +156,7 @@ window.STORY_DATA = {
       },
       cafeUnlock: { label: '카페 특전 안내', key: 'benefit', fallback: '카페 특전 안내는 확정 후 이 메시지에서 공개할게.' },
       memberComplete: [
-        '도곰라멘도 완성! 마지막 그릇까지 차려졌어.',
+        '도곰라멘도 준비 완료! 필요한 두 재료를 모두 찾았어.',
         '그런데 그릇 받침 아래에서 특별 안내 카드가 나왔어. 이건 꼭 챙겨 둬야겠다!'
       ],
       ingredients: [
@@ -171,12 +171,12 @@ window.STORY_DATA = {
         },
         {
           id:'broth', name:'육수', introTurns:3,
-          intro:'이제 그릇 속 면을 채워 줄 진한 맛이 필요해. 냄비에 있던 액체가 어디 갔을까?',
+          intro:'라멘의 진한 맛을 내는 액체가 사라졌어. 냄비에 있던 게 어디 갔을까?',
           searchPrompt:'오래 끓인 국물 냄새가 나는 곳을 찾자.',
           searchOptions:[{label:'큰 냄비',right:true,reply:'큰 냄비 안에서 김이 피어오르고 있어! 여기 있었구나.'},{label:'도마 서랍',right:false,reply:'서랍엔 칼과 집게뿐이야. 액체라면 냄비겠지?'}],
           clues:['재료를 오래 끓여 맛을 낸 국물이야.', '라멘에서 면과 토핑의 맛을 이어 주는 바탕이지.'],
           answers:['육수','국물','라멘육수'], hint:'고기나 채소를 오래 끓여 만든 두 글자 말이야.',
-          success:['맞아, 육수! 국물이 있으니 따뜻해졌어.', '이번엔 위에 올릴 토핑이 필요하겠다.']
+          success:['맞아, 육수! 국물이 있으니 따뜻해졌어.', '면과 육수를 찾았으니까 이제 라멘을 완성할 수 있겠어!']
         },
         {
           id:'chashu', name:'차슈', introTurns:2,
@@ -189,12 +189,12 @@ window.STORY_DATA = {
         },
         {
           id:'ajitama', name:'반숙달걀', introTurns:3,
-          intro:'마지막 토핑은 반으로 가르면 안이 노랗고 촉촉해. 누가 반을 잘라 놓았던데…',
+          intro:'반으로 가르면 속이 노랗고 촉촉한 토핑이 안 보여. 분명 아까 반을 잘라 놓았는데…',
           searchPrompt:'작은 토핑을 담는 칸에서 찾아볼까?',
           searchOptions:[{label:'토핑 보관통',right:true,reply:'여기 반으로 자른 달걀이 있어. 노른자가 촉촉하네!'},{label:'밀가루 포대',right:false,reply:'가루만 묻었네. 완성한 토핑은 따로 담아뒀을 거야.'}],
           clues:['삶는 시간을 짧게 조절해서 노른자가 촉촉하게 남아.', '라멘 위에 반으로 잘라 올리는 달걀 토핑이야.'],
           answers:['반숙달걀','반숙계란','반숙 달걀','아지타마','맛달걀'], hint:'완숙의 반대인 말과 달걀을 붙이면 돼.',
-          success:['반숙달걀까지 찾았어! 이제 도곰라멘 완성.', '이렇게 찾아 놓으니 세상에서 제일 맛있는 한 그릇 같은데?']
+          success:['반숙달걀 찾았어! 라멘 위에 올리면 훨씬 먹음직스럽겠네.', '이렇게 찾아 놓으니 세상에서 제일 맛있는 한 그릇 같은데?']
         }
       ]
     }

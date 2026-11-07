@@ -5,39 +5,100 @@
   const $ = id => document.getElementById(id);
   const members = story.members;
   const validIds = members.map(m => m.id);
-  const allKeys = members.flatMap(m => m.ingredients.map(item => `${m.id}:${item.id}`));
-  const STORAGE_KEY = 'cp-cafe-lost-recipe-v4';
+  // Each new playthrough chooses two distinct ingredients out of each member's four.
+  // The choices are stored with the save, so refreshing will not reroll missions.
+  const requiredCount = member => Math.min(member.ingredients.length, Math.max(1,
+    Number.isInteger(member.requiredIngredients) ? member.requiredIngredients : member.ingredients.length));
+  const STORAGE_KEY = 'cp-cafe-lost-recipe-v4'; // Keeps older saves available for migration.
   const PHASES = ['talk','search','solve','found','member_done','finished'];
   let state;
   let storageEnabled = true;
   let selectedMemberId = null;
 
+  function randomNumber(max) {
+    if (globalThis.crypto?.getRandomValues) {
+      const buf = new Uint32Array(1);
+      // Rejection sampling avoids modulo bias even if ingredient pools grow.
+      const limit = 0x100000000 - (0x100000000 % max);
+      do { globalThis.crypto.getRandomValues(buf); } while (buf[0] >= limit);
+      return buf[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  }
+  function randomIngredients(member, priorities=[]) {
+    const count=requiredCount(member);
+    const validIds=member.ingredients.map(i=>i.id);
+    const chosen=[...new Set(priorities.filter(id=>validIds.includes(id)))].slice(0,count);
+    const remaining=validIds.filter(id=>!chosen.includes(id));
+    while(chosen.length<count) {
+      const index=randomNumber(remaining.length);
+      chosen.push(remaining.splice(index,1)[0]);
+    }
+    return chosen;
+  }
+  function allSelectedKeys(s) {
+    return members.flatMap(m=>(s.selectedIngredients[m.id]||[]).map(id=>`${m.id}:${id}`));
+  }
   function newState() {
-    return {version:4,started:false,nickname:'',currentMemberId:null,completedMembers:[],
+    return {version:6,started:false,nickname:'',currentMemberId:null,completedMembers:[],
+      selectedIngredients:Object.fromEntries(members.map(m=>[m.id,randomIngredients(m)])),
       collected:[],itemIndex:0,phase:'talk',talkTurns:0,wrongSearch:0,wrongAnswer:0,
       messages:[],receiptId:null,issuedAt:null};
   }
   function validate(raw) {
-    if (!raw || raw.version !== 4 || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
+    if (!raw || ![4,5,6].includes(raw.version) || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
       typeof raw.nickname !== 'string' || raw.nickname.length > 12 ||
       !Array.isArray(raw.collected) || !Array.isArray(raw.completedMembers)) return null;
-    const result = newState();
-    result.started = !!raw.started;
-    result.nickname = raw.nickname.trim().slice(0,12);
-    result.currentMemberId = validIds.includes(raw.currentMemberId) ? raw.currentMemberId : null;
-    if (result.started && (!result.nickname || !result.currentMemberId)) return null;
-    result.completedMembers = [...new Set(raw.completedMembers.filter(id=>validIds.includes(id)))];
-    result.collected = [...new Set(raw.collected.filter(key=>allKeys.includes(key)))];
-    const c = members.find(m=>m.id===result.currentMemberId);
-    result.itemIndex = Math.max(0,Math.min(c?.ingredients.length-1 || 0, Number.isInteger(raw.itemIndex)?raw.itemIndex:0));
-    result.phase = raw.phase;
-    result.talkTurns = Math.max(0,Math.min(20,Number(raw.talkTurns)||0));
-    result.wrongSearch = Math.max(0,Math.min(30,Number(raw.wrongSearch)||0));
-    result.wrongAnswer = Math.max(0,Math.min(30,Number(raw.wrongAnswer)||0));
-    result.messages = raw.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string')
-      .slice(-280).map(m=>({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:result.currentMemberId}));
-    result.receiptId = typeof raw.receiptId==='string' && /^DEMO-[A-Z0-9]{8}$/.test(raw.receiptId)?raw.receiptId:null;
-    result.issuedAt = typeof raw.issuedAt==='string'&&raw.issuedAt.length<40?raw.issuedAt:null;
+    const result=newState();
+    result.started=!!raw.started;
+    result.nickname=raw.nickname.trim().slice(0,12);
+    result.currentMemberId=validIds.includes(raw.currentMemberId)?raw.currentMemberId:null;
+    if(result.started&&(!result.nickname||!result.currentMemberId))return null;
+    for (const member of members) {
+      const saved=raw.selectedIngredients?.[member.id];
+      const validIdsForMember=member.ingredients.map(i=>i.id);
+      if(raw.version===6&&Array.isArray(saved)&&saved.length===requiredCount(member)&&
+        new Set(saved).size===saved.length&&saved.every(id=>validIdsForMember.includes(id))) {
+        result.selectedIngredients[member.id]=[...saved];
+      } else if(raw.version<=5&&result.started) {
+        // Preserve already found ingredients and the active unsolved recipe during migration.
+        const found=member.ingredients.filter(i=>raw.collected.includes(`${member.id}:${i.id}`)).map(i=>i.id);
+        const active=member.id===result.currentMemberId ? member.ingredients[raw.itemIndex]?.id : null;
+        const fixed=[...found];
+        if(active&&!fixed.includes(active))fixed.push(active);
+        result.selectedIngredients[member.id]=randomIngredients(member,fixed);
+      }
+    }
+    const selectedKeys=allSelectedKeys(result);
+    result.collected=[...new Set(raw.collected.filter(key=>selectedKeys.includes(key)))];
+    result.completedMembers=members.filter(m=>result.selectedIngredients[m.id].every(id=>
+      result.collected.includes(`${m.id}:${id}`))).map(m=>m.id);
+    const member=members.find(m=>m.id===result.currentMemberId);
+    if(raw.version<=5&&member){
+      const oldId=member.ingredients[raw.itemIndex]?.id;
+      const migratedIndex=result.selectedIngredients[member.id].indexOf(oldId);
+      result.itemIndex=migratedIndex>=0?migratedIndex:0;
+    }else{
+      result.itemIndex=Math.max(0,Math.min(member?requiredCount(member)-1:0,Number.isInteger(raw.itemIndex)?raw.itemIndex:0));
+    }
+    result.phase=raw.phase;
+    if(result.started&&result.completedMembers.includes(result.currentMemberId)){
+      result.phase=result.completedMembers.length===members.length?'finished':'member_done';
+      if(raw.version<=5&&result.phase!==raw.phase)
+        result.messages.push({role:'system',text:'업데이트: 두 재료를 모두 찾았어요. 다른 멤버에게 이어서 연락해 보세요!',memberId:result.currentMemberId});
+    }else if(result.phase==='finished'||result.phase==='member_done'){
+      // Never leave a save in a completed phase unless all selected ingredients are collected.
+      result.phase='talk';
+    }
+    result.talkTurns=Math.max(0,Math.min(20,Number(raw.talkTurns)||0));
+    result.wrongSearch=Math.max(0,Math.min(30,Number(raw.wrongSearch)||0));
+    result.wrongAnswer=Math.max(0,Math.min(30,Number(raw.wrongAnswer)||0));
+    result.messages=[...result.messages,...raw.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string')
+      .slice(-280).map(m=>({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:result.currentMemberId}))].slice(-280);
+    if(result.phase==='finished'){
+      result.receiptId=typeof raw.receiptId==='string'&&/^DEMO-[A-Z0-9]{8}$/.test(raw.receiptId)?raw.receiptId:null;
+      result.issuedAt=typeof raw.issuedAt==='string'&&raw.issuedAt.length<40?raw.issuedAt:null;
+    }
     return result;
   }
   function persist() {
@@ -46,7 +107,11 @@
     catch (_) {storageEnabled=false;}
   }
   function currentMember() {return members.find(m=>m.id===state.currentMemberId)||members[0];}
-  function currentItem() {return currentMember().ingredients[state.itemIndex];}
+  function currentItem() {
+    const member=currentMember();
+    const ingredientId=state.selectedIngredients[member.id][state.itemIndex];
+    return member.ingredients.find(item=>item.id===ingredientId);
+  }
   function say(role,raw,memberId=state.currentMemberId) {
     const text = role==='bot' ? String(raw).replaceAll('{nickname}',state.nickname) : String(raw);
     state.messages.push({role,text,memberId});
@@ -68,7 +133,8 @@
   function initialLoad() {
     try {const raw=localStorage.getItem(STORAGE_KEY);state=raw?validate(JSON.parse(raw)):null;}
     catch(_){storageEnabled=false;}
-    if(!state){state=newState();persist();}
+    if(!state)state=newState();
+    persist(); // Immediately save randomized/migrated selections for stable refreshes.
   }
   initialLoad();
 
@@ -76,12 +142,34 @@
     .replace(/[\u200b-\u200d\ufeff\s\p{P}\p{S}]/gu,'');
   const negative = text => /(?:아니|아냐|아닌|아님|말고|그거 말고|아닐|not\b)/i.test(String(text));
   function matchesAnswer(text,answers) {
-    if(negative(text))return false;
-    const t=normal(text);
-    return !!t && answers.some(answer=> {
+    const raw=String(text||'').trim();
+    // '청경채 말고', '청경채는 아니야' 같은 부정은 정답 처리하지 않습니다.
+    if (/(?:말고|아니라고|아닌데|아니래|아님|아냐|틀렸)/.test(raw)) return false;
+    // '청경채 아니야?' / '청경채 아닐까?'는 긍정적인 추측 표현으로 허용합니다.
+    if (/(?:아니야|아니다|아닐)/.test(raw) && !/(?:아닐까|아니야\s*[?？])/.test(raw)) return false;
+    const t=normal(raw);
+    if(!t)return false;
+    const prefix='(?:정답은|정답|답은|답|이거|그거|재료는|재료|내생각엔|내생각에는|아마|혹시)?';
+    const suffix='(?:인것같아|인거같아|인것같은데|인거같은데|일것같아|일거같아|같아|같은데|인듯|일듯|맞지|맞아|이야|야|일까|인가|아닐까|아니야|인데|이네)?';
+    return answers.some(answer=> {
       const a=normal(answer);
-      return a && (t===a || t===`정답은${a}` || t===`아마${a}` || t===`${a}인것같아` || t===`${a}같아` || t===`혹시${a}` || (a.length>1&&t===`${a}야`));
+      if(!a)return false;
+      const escaped=a.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      return new RegExp(`^${prefix}${escaped}${suffix}$`).test(t);
     });
+  }
+  function collectCurrentItem(wasEarly) {
+    const m=currentMember(), item=currentItem(), key=`${m.id}:${item.id}`;
+    if(state.collected.includes(key)) return;
+    state.phase='found';
+    state.collected.push(key);
+    if(wasEarly) say('bot','벌써 알아챘어? 정답이야! 힌트 없이 찾아내다니 대단한데?');
+    // Only the item-specific line is shown; scripted 'last ingredient' lines would
+    // contradict a randomized order. A generic transition follows instead.
+    if(item.success.length)say('bot',item.success[0]);
+    const remain=requiredCount(m)-state.selectedIngredients[m.id].filter(id=>state.collected.includes(`${m.id}:${id}`)).length;
+    say('bot',remain>0?'좋아, 다음 재료도 찾아보자!':'이제 이 요리에 필요한 두 재료를 모두 찾았어!');
+    say('system','✦ 찾은 재료를 잘 챙겨 두었어요.');
   }
   function intentOf(text){
     if(/(?:힌트|모르겠|도움|help|단서)/i.test(text))return 'hint';
@@ -106,7 +194,10 @@
     if(!state.started||!text||['found','member_done','finished'].includes(state.phase))return;
     say('player',text);
     const m=currentMember(), item=currentItem(), intent=intentOf(text);
-    if(state.phase==='talk'){
+    if(matchesAnswer(text,item.answers)){
+      // 대화 첫 턴이나 수색 중에도 정답을 입력하면 즉시 인정합니다.
+      collectCurrentItem(state.phase!=='solve');
+    }else if(state.phase==='talk'){
       if(cafeQuestion(text)) say('bot','그 이야기는 준비가 끝나면 알려줄게. 지금은 우리 레시피부터 완성해 보자!');
       else say('bot',replyFromVoice(text));
       state.talkTurns++;
@@ -122,12 +213,7 @@
       else if(intent==='hint'||intent==='question')say('bot','주변을 잘 살펴보자. 화면에 나온 장소 중 어디가 더 수상해 보여?');
       else say('bot',replyFromVoice(text)+' 장소를 골라 확인해 보자.');
     }else if(state.phase==='solve'){
-      if(matchesAnswer(text,item.answers)){
-        state.phase='found';
-        state.collected.push(`${m.id}:${item.id}`);
-        sayAll('bot',item.success);
-        say('system','✦ 찾은 재료를 잘 챙겨 두었어요.');
-      }else if(intent==='hint'||intent==='question'){
+      if(intent==='hint'||intent==='question'){
         say('bot',item.hint);
       }else{
         state.wrongAnswer++;
@@ -156,7 +242,7 @@
   function nextScene(){
     if(state.phase!=='found')return;
     const member=currentMember();
-    if(state.itemIndex+1<member.ingredients.length){
+    if(state.itemIndex+1<requiredCount(member)){
       state.itemIndex++;state.talkTurns=0;state.wrongSearch=0;state.wrongAnswer=0;state.phase='talk';
       say('system','잠시 후 · 새로운 흔적');
       say('bot',currentItem().intro);
@@ -276,7 +362,7 @@
     $('ticket-message').textContent=story.receipt.message;persist();
   }
   function openTicket(){
-    if(state.phase!=='finished'||state.collected.length!==allKeys.length||state.completedMembers.length!==members.length)return;
+    if(state.phase!=='finished'||state.collected.length!==allSelectedKeys(state).length||state.completedMembers.length!==members.length)return;
     populateTicket();dialog.showModal();
   }
   function saveFile(blob,filename){
