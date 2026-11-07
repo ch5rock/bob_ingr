@@ -6,6 +6,7 @@
   const members = story.members;
   const validIds = members.map(m => m.id);
   // Each new playthrough chooses two distinct ingredients out of each member's four.
+  // Scripted requiredDialogue lines are always shown at their defined milestones.
   // The choices are stored with the save, so refreshing will not reroll missions.
   const requiredCount = member => Math.min(member.ingredients.length, Math.max(1,
     Number.isInteger(member.requiredIngredients) ? member.requiredIngredients : member.ingredients.length));
@@ -40,13 +41,13 @@
     return members.flatMap(m=>(s.selectedIngredients[m.id]||[]).map(id=>`${m.id}:${id}`));
   }
   function newState() {
-    return {version:6,started:false,nickname:'',currentMemberId:null,completedMembers:[],
+    return {version:7,started:false,nickname:'',currentMemberId:null,completedMembers:[],
       selectedIngredients:Object.fromEntries(members.map(m=>[m.id,randomIngredients(m)])),
-      collected:[],itemIndex:0,phase:'talk',talkTurns:0,wrongSearch:0,wrongAnswer:0,
+      collected:[],itemIndex:0,phase:'talk',talkTurns:0,wrongSearch:0,wrongAnswer:0,hintsSeen:0,
       messages:[],receiptId:null,issuedAt:null};
   }
   function validate(raw) {
-    if (!raw || ![4,5,6].includes(raw.version) || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
+    if (!raw || ![4,5,6,7].includes(raw.version) || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
       typeof raw.nickname !== 'string' || raw.nickname.length > 12 ||
       !Array.isArray(raw.collected) || !Array.isArray(raw.completedMembers)) return null;
     const result=newState();
@@ -57,7 +58,7 @@
     for (const member of members) {
       const saved=raw.selectedIngredients?.[member.id];
       const validIdsForMember=member.ingredients.map(i=>i.id);
-      if(raw.version===6&&Array.isArray(saved)&&saved.length===requiredCount(member)&&
+      if(raw.version>=6&&Array.isArray(saved)&&saved.length===requiredCount(member)&&
         new Set(saved).size===saved.length&&saved.every(id=>validIdsForMember.includes(id))) {
         result.selectedIngredients[member.id]=[...saved];
       } else if(raw.version<=5&&result.started) {
@@ -93,6 +94,7 @@
     result.talkTurns=Math.max(0,Math.min(20,Number(raw.talkTurns)||0));
     result.wrongSearch=Math.max(0,Math.min(30,Number(raw.wrongSearch)||0));
     result.wrongAnswer=Math.max(0,Math.min(30,Number(raw.wrongAnswer)||0));
+    result.hintsSeen=Math.max(0,Math.min(3,Number(raw.hintsSeen)||0));
     result.messages=[...result.messages,...raw.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string')
       .slice(-280).map(m=>({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:result.currentMemberId}))].slice(-280);
     if(result.phase==='finished'){
@@ -117,7 +119,15 @@
     state.messages.push({role,text,memberId});
     if(state.messages.length>280)state.messages=state.messages.slice(-280);
   }
-  function sayAll(role,lines) {for(const line of lines)say(role,line);}
+  function sayAll(role,lines) {for(const line of (Array.isArray(lines)?lines:[])) if(typeof line==='string'&&line.trim())say(role,line);}
+  // Required lines are appended on reaching these milestones, even if a user solves immediately.
+  function requiredLines(source,milestone) {sayAll('bot',source?.requiredDialogue?.[milestone]);}
+  // Extra scene-specific lines also live in story-data.js so the author can edit every character's tone.
+  function sceneLine(key,fallback) {
+    const value=currentMember().sceneVoice?.[key];
+    if(Array.isArray(value))return value.length?String(value[(state.talkTurns+state.wrongAnswer+state.itemIndex)%value.length]):fallback;
+    return typeof value==='string'&&value.trim()?value:fallback;
+  }
   function begin(memberId,nickname) {
     state=newState();state.started=true;state.nickname=nickname.trim().slice(0,12);
     enterMember(memberId);persist();render();
@@ -127,7 +137,9 @@
     state.currentMemberId=memberId;state.itemIndex=0;state.phase='talk';state.talkTurns=0;state.wrongSearch=0;state.wrongAnswer=0;
     say('system',`${currentMember().name}님과 대화가 연결되었어요 ♡`);
     sayAll('bot',currentMember().opening);
+    requiredLines(currentMember(),'onEnter');
     say('bot',currentItem().intro);
+    requiredLines(currentItem(),'onStart');
     persist();render();
   }
   function initialLoad() {
@@ -163,12 +175,13 @@
     if(state.collected.includes(key)) return;
     state.phase='found';
     state.collected.push(key);
-    if(wasEarly) say('bot','벌써 알아챘어? 정답이야! 힌트 없이 찾아내다니 대단한데?');
+    if(wasEarly) say('bot',sceneLine('earlyCorrect','벌써 알아챘어? 정답이야! 힌트 없이 찾아내다니 대단한데?'));
     // Only the item-specific line is shown; scripted 'last ingredient' lines would
     // contradict a randomized order. A generic transition follows instead.
     if(item.success.length)say('bot',item.success[0]);
+    requiredLines(item,'onFound');
     const remain=requiredCount(m)-state.selectedIngredients[m.id].filter(id=>state.collected.includes(`${m.id}:${id}`)).length;
-    say('bot',remain>0?'좋아, 다음 재료도 찾아보자!':'이제 이 요리에 필요한 두 재료를 모두 찾았어!');
+    say('bot',remain>0?sceneLine('moreIngredients','좋아, 다음 재료도 찾아보자!'):sceneLine('ingredientsComplete','이제 이 요리에 필요한 두 재료를 모두 찾았어!'));
     say('system','✦ 찾은 재료를 잘 챙겨 두었어요.');
   }
   function intentOf(text){
@@ -198,27 +211,30 @@
       // 대화 첫 턴이나 수색 중에도 정답을 입력하면 즉시 인정합니다.
       collectCurrentItem(state.phase!=='solve');
     }else if(state.phase==='talk'){
-      if(cafeQuestion(text)) say('bot','그 이야기는 준비가 끝나면 알려줄게. 지금은 우리 레시피부터 완성해 보자!');
+      if(cafeQuestion(text)) say('bot',sceneLine('cafeLocked','그 이야기는 준비가 끝나면 알려줄게. 지금은 우리 레시피부터 완성해 보자!'));
       else say('bot',replyFromVoice(text));
       state.talkTurns++;
       if(state.talkTurns >= (item.introTurns||2)){
         state.phase='search';
         say('bot',item.searchPrompt);
       }else if(state.talkTurns===1){
-        say('bot','아까부터 마음에 걸리는 흔적이 있어. 네 생각도 조금 더 들려줄래?');
+        say('bot',sceneLine('continueTalk','아까부터 마음에 걸리는 흔적이 있어. 네 생각도 조금 더 들려줄래?'));
       }
     }else if(state.phase==='search'){
       const selected=item.searchOptions.find(opt=>normal(text).includes(normal(opt.label)));
       if(selected)searchAt(item.searchOptions.indexOf(selected),true);
-      else if(intent==='hint'||intent==='question')say('bot','주변을 잘 살펴보자. 화면에 나온 장소 중 어디가 더 수상해 보여?');
-      else say('bot',replyFromVoice(text)+' 장소를 골라 확인해 보자.');
+      else if(intent==='hint'||intent==='question')say('bot',sceneLine('chooseLocation','주변을 잘 살펴보자. 화면에 나온 장소 중 어디가 더 수상해 보여?'));
+      else say('bot',replyFromVoice(text)+' '+sceneLine('chooseLocation','장소를 골라 확인해 보자.'));
     }else if(state.phase==='solve'){
       if(intent==='hint'||intent==='question'){
-        say('bot',item.hint);
+        // Reveal additional clues one at a time rather than all clues upfront.
+        const nextClue=item.clues?.[state.hintsSeen+1];
+        if(nextClue){say('bot',nextClue);state.hintsSeen++;}
+        else say('bot',item.hint);
       }else{
         state.wrongAnswer++;
-        if(state.wrongAnswer%2===0) say('bot','조금 더 생각해 보자. '+item.hint);
-        else say('bot','음… 그 재료는 아닌 것 같아. '+item.clues[state.wrongAnswer%item.clues.length]);
+        if(state.wrongAnswer%2===0) say('bot',sceneLine('wrongAnswerHint','조금 더 생각해 보자.')+' '+item.hint);
+        else say('bot',sceneLine('wrongAnswer','음… 다른 재료일 것 같아. 단서가 필요하면 힌트라고 말해 줘.'));
       }
     }
     persist();render();
@@ -230,12 +246,12 @@
     if(!fromChat)say('player',option.label);
     say('bot',option.reply);
     if(option.right){
-      state.phase='solve';state.wrongAnswer=0;
-      sayAll('bot',item.clues);
-      say('bot','찾은 흔적과 맞는 재료가 뭘까? 직접 입력해 줘.');
+      state.phase='solve';state.wrongAnswer=0;state.hintsSeen=0;
+      if(item.clues?.length)say('bot',item.clues[0]);
+      say('bot',sceneLine('answerPrompt','찾은 흔적과 맞는 재료가 뭘까? 직접 입력해 줘.'));
     }else{
       state.wrongSearch++;
-      if(state.wrongSearch>=2)say('bot','다른 장소도 살펴보자. 분명 가까이에 있어.');
+      if(state.wrongSearch>=2)say('bot',sceneLine('wrongSearch','다른 장소도 살펴보자. 분명 가까이에 있어.'));
     }
     persist();render();
   }
@@ -243,9 +259,10 @@
     if(state.phase!=='found')return;
     const member=currentMember();
     if(state.itemIndex+1<requiredCount(member)){
-      state.itemIndex++;state.talkTurns=0;state.wrongSearch=0;state.wrongAnswer=0;state.phase='talk';
+      state.itemIndex++;state.talkTurns=0;state.wrongSearch=0;state.wrongAnswer=0;state.hintsSeen=0;state.phase='talk';
       say('system','잠시 후 · 새로운 흔적');
       say('bot',currentItem().intro);
+      requiredLines(currentItem(),'onStart');
     }else completeMember();
     persist();render();
   }
@@ -253,6 +270,7 @@
     const member=currentMember();
     if(!state.completedMembers.includes(member.id))state.completedMembers.push(member.id);
     sayAll('bot',member.memberComplete);
+    requiredLines(member,'onFinish');
     const clue=member.cafeUnlock;
     say('system',`♡ 발견한 쪽지 · ${clue.label}`);
     say('bot',String(story.cafe[clue.key]||'').trim()||clue.fallback);
@@ -262,7 +280,7 @@
       ensureReceipt();
     }else{
       state.phase='member_done';
-      say('bot','아직 다른 주방에서도 연락이 왔대. 누구에게 먼저 답장할까?');
+      say('bot',sceneLine('otherMembers','아직 다른 주방에서도 연락이 왔대. 누구에게 먼저 답장할까?'));
     }
   }
   function ensureReceipt(){
