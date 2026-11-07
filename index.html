@@ -3,26 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#8dc5f1" />
-  <meta name="description" content="블루·옐로·화이트 CP 카페 채팅 안내 및 챕터형 스토리" />
-  <title>CP CAFE · CHAT GUIDE</title>
+  <meta name="theme-color" content="#dceeff" />
+  <meta name="description" content="멤버들과 채팅하고 미션을 풀어 카페 정보와 굿즈를 해금하는 CP 카페 게임" />
+  <title>CP CAFE · SECRET CHAT</title>
   <link rel="stylesheet" href="style.css" />
   <script src="cafe-data.js" defer></script>
   <script src="game.js" defer></script>
 </head>
 <body>
-  <main class="chat-frame" aria-label="CP 카페 채팅 가이드">
+  <main class="chat-frame" aria-label="CP 카페 멤버 채팅 미션 게임">
     <header class="chat-header">
-      <div class="ribbon" aria-hidden="true">✳ &nbsp; HELLO, SWEET DAY! &nbsp; ✳</div>
+      <div class="ribbon" aria-hidden="true">✳ &nbsp; BLUE · YELLOW · WHITE &nbsp; ✳</div>
       <div class="header-main">
         <div class="profile-avatar" id="profile-avatar" aria-hidden="true">🐻</div>
         <div class="profile-copy">
-          <div class="name-line"><strong id="character-name">모모</strong><span class="online"><i></i> ONLINE</span></div>
-          <p id="character-subtitle">CP 카페 안내 도우미</p>
+          <div class="name-line"><strong id="character-name">멤버 A</strong><span class="online"><i></i> CHAT</span></div>
+          <p id="character-subtitle">멤버와 대화하며 작은 비밀을 찾아요.</p>
         </div>
         <button class="icon-button menu-toggle" id="menu-toggle" aria-expanded="false" aria-label="설정 메뉴 열기" type="button">⋯</button>
       </div>
-      <div class="header-bottom"><span class="chat-label">♡ &nbsp; CP CAFE CHAT GUIDE</span><span class="chapter-label" id="chapter-label">INFO MODE</span></div>
+      <div class="header-bottom">
+        <span class="chat-label" id="chat-title">♡ &nbsp; CP CAFE SECRET CHAT</span>
+        <span class="chapter-label" id="chapter-label">MISSION 01 / 03</span>
+      </div>
+      <div class="member-progress" id="member-progress" aria-label="멤버 진행도"></div>
       <div class="popup-menu" id="popup-menu" hidden>
         <button type="button" id="save-export">진행 기록 내보내기</button>
         <button type="button" id="save-import">진행 기록 불러오기</button>
@@ -30,25 +34,24 @@
         <button type="button" id="save-reset" class="danger">처음부터 다시 시작</button>
       </div>
     </header>
-    <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions">
-      <div class="date-divider"><span>우리만의 작은 채팅방 ♡</span></div>
+    <section class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions">
+      <div class="date-divider"><span>세 개의 대화, 세 개의 작은 선물 ♡</span></div>
       <div id="messages"></div>
       <div id="story-actions" aria-live="polite"></div>
-    </div>
+    </section>
     <footer class="chat-footer">
-      <div class="chips" id="quick-actions" aria-label="빠른 질문">
-        <button type="button" data-info="date">📅 일정</button>
-        <button type="button" data-info="location">📍 위치</button>
-        <button type="button" data-info="benefits">🎁 특전</button>
-        <button type="button" data-info="menu">☕ 메뉴</button>
-        <button type="button" data-start-story="true" class="story-chip">✨ 스토리 시작</button>
+      <div class="chips" id="quick-actions" aria-label="대화 바로가기">
+        <button type="button" id="quick-hello">💬 인사하기</button>
+        <button type="button" id="quick-hint">💡 미션 힌트</button>
+        <button type="button" id="quick-info">📍 카페 정보</button>
+        <button type="button" id="quick-items" class="story-chip">🎁 내 획득품</button>
       </div>
       <form class="composer" id="chat-form">
         <label class="sr-only" for="message-input">메시지 입력</label>
-        <input id="message-input" maxlength="220" autocomplete="off" placeholder="궁금한 내용을 자유롭게 입력해 주세요 ♡" required />
+        <input id="message-input" maxlength="220" autocomplete="off" placeholder="멤버에게 자유롭게 답장해 주세요 ♡" required />
         <button id="send-button" type="submit" aria-label="메시지 보내기">➤</button>
       </form>
-      <p class="footer-hint">FREE CHAT EXPERIENCE · 별도 AI API 없음 · 자동 저장</p>
+      <p class="footer-hint">FREE · NO AI API · 체험판 보상은 실제 교환권이 아닙니다</p>
     </footer>
   </main>
 </body>
