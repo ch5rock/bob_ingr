@@ -1,174 +1,45 @@
-# CP CAFE V1
+# AFTER THE SIGNAL — GitHub Pages 무료 자유입력 스토리 게임
 
-GitHub Pages + Firebase Firestore로 운영하는 참여형 CP 카페 홈페이지 V1입니다.
+이 시제품은 **AI API·서버·데이터베이스·외부 라이브러리 없이** 동작합니다. 대화 의도는 `game.js`의 정규식 규칙으로 분류하고, 답변·챕터·선택지는 `story-data.js`에 작성되어 있습니다.
 
-구조:
-- HOME
-- 이번 달 추천 메뉴
-- 추천 맛집
-- 방명록
-- 손님 유형 테스트
-- INFO
+## 바로 써 보는 방법
 
-## 1. 제일 먼저 수정할 파일
+1. `index.html`을 크롬/웨일 등 브라우저로 열어 보세요.
+2. 채팅창에 `보고 싶었어`, `왜 연락했어?`, `미안해`, `너 못 믿겠어`, `편지가 뭐야?` 등을 입력해 보세요.
+3. 3회 이상 대화하고 주요 감정/의도에 관한 말을 했다면 '스토리 이벤트 진행하기'가 나타납니다. 그렇지 않더라도 5회 대화하면 이벤트를 시작할 수 있습니다.
+4. 이벤트를 열어 선택지를 고르면 신뢰도와 기억에 반영되고 다음 챕터가 열립니다.
+5. 3챕터를 마치면 선택 기록과 신뢰도에 따라 2개 엔딩 중 하나가 나타납니다.
 
-### `site-config.js`
+## GitHub Pages 배포
 
-이 파일만 수정해도 대부분의 내용이 바뀝니다.
+1. GitHub에 로그인 후 **New repository**에서 `character-story-chat` 저장소를 새로 만들고 **Public**으로 설정합니다.
+2. 이 폴더 안의 `index.html`, `style.css`, `story-data.js`, `game.js`, `.nojekyll`을 저장소 **루트**에 업로드합니다. (`README.md`도 올려도 됩니다.)
+3. 저장소 **Settings → Pages → Build and deployment → Deploy from a branch**를 선택합니다.
+4. **Branch: main**, **Folder: /(root)**를 선택하고 **Save**를 누릅니다.
+5. 배포가 완료되면 `https://사용자아이디.github.io/character-story-chat/`에서 접속할 수 있습니다.
 
-수정 가능:
-- 사이트 제목
-- 행사 날짜
-- 메인 문구 / 메인 이미지
-- 이번 달 추천 메뉴 문구 / 이미지
-- 추천 맛집 목록
-- 맛집 제보 폼 URL
-- 테스트 공개 여부
-- INFO 공개 여부와 내용
+## 작동 원리
 
-이미지 파일은 `assets` 폴더에 넣고 경로만 바꾸면 됩니다.
+- `story-data.js` — 캐릭터 설정, 각 챕터 시작 대사, 이벤트 선택지, 의도별 응답, 엔딩
+- `game.js` — 자유입력 분류, 이벤트 발생 조건, 관계·선택 기억, 자동 저장·불러오기
+- `index.html` — 채팅 화면 구조
+- `style.css` — 모바일/PC 반응형 디자인
 
-예:
-```js
-image: "./assets/september-menu.jpg"
-```
+### 자유입력 규칙 추가
 
----
+`game.js`에서 `patterns`에 의도를 나타내는 정규식을 추가하고, `story-data.js`의 `responses`에 **각 챕터의 동일한 의도명**을 추가하세요. 의도 인식은 위에서부터 순서대로 적용되기 때문에, `못 믿겠어`처럼 부정 표현은 `믿어`보다 우선 검사하도록 설계되어 있습니다.
 
-## 2. 추천 맛집 제보 폼 연결
+### 챕터 확장
 
-Google Form 등을 하나 만든 뒤 `site-config.js`의 아래 부분에 주소를 넣으세요.
+`story-data.js`의 `chapters`에 새 챕터를 추가하고 `responses`에도 같은 장 번호의 응답을 추가해야 합니다. 현재 `game.js`는 3챕터를 기본으로 저장 검증·엔딩 조건을 확인하므로, 4챕터 이상으로 확장할 때 그 부분의 숫자도 수정해야 합니다.
 
-```js
-recommendationFormUrl: "https://forms.gle/..."
-```
+## 반드시 알아야 할 한계
 
-추천 맛집 제보 자체는 Firebase를 쓰지 않습니다.
+- **AI가 아닙니다.** 규칙에 없는 표현에는 준비된 일반 대사로 반응합니다. 모든 문장의 의미를 이해할 수 없습니다.
+- **비밀이 보호되지 않습니다.** GitHub Pages에 올라간 JavaScript 및 스토리 텍스트는 사이트 방문자가 개발자 도구를 통해 확인할 수 있습니다. 공개 전 반전·비밀번호 등을 숨겨야 한다면 서버가 필요합니다.
+- **로그인·계정 동기화가 없습니다.** `localStorage`로 현재 브라우저에 저장하며, 데이터가 삭제되면 기록이 없어질 수 있습니다. 수동 JSON 내보내기/불러오기를 제공합니다.
+- **배포는 직접 해야 합니다.** ZIP 파일을 GitHub에 올리는 대신, 압축을 풀어 내부 파일을 저장소 루트에 넣으세요.
+- **사용자 입력은 로컬에서 처리됩니다.** 이 시제품에는 대화 데이터를 서버로 전송하는 로직이 없습니다.
+- 복잡한 문장, 반어법, 띄어쓰기 변형, 새로운 표현은 규칙의 추가 없이는 분류가 부정확할 수 있습니다.
 
-제보를 받은 뒤 운영자가 골라서 `restaurants` 배열에 직접 추가합니다.
-
----
-
-## 3. Firebase 연결
-
-방명록에만 Firebase를 사용합니다.
-
-### Firebase Console에서
-
-1. 새 프로젝트 생성
-2. `Authentication`
-3. 로그인 제공업체에서 `익명(Anonymous)` 활성화
-4. `Firestore Database` 생성
-5. 웹 앱 추가
-6. Firebase SDK 설정의 `firebaseConfig` 확인
-7. 이 프로젝트의 `firebase.js`에 값 붙여넣기
-8. Firestore Rules에 `firestore.rules` 내용 적용
-
-웹 Firebase config는 프런트 코드에 공개되는 값입니다.
-보안을 담당하는 것은 Firestore Security Rules입니다.
-
----
-
-## 4. Firebase 읽기 절약 설계
-
-지난번처럼 read가 빠르게 소진되는 것을 막기 위해 다음과 같이 구성했습니다.
-
-- 사이트 접속만으로 방명록을 읽지 않음
-- 사용자가 방명록 섹션 근처에 왔을 때만 로딩
-- 한 번에 최근 6개만 조회
-- 아래로 내려가면 다음 6개 자동 로딩
-- `onSnapshot()` 실시간 리스너 사용 안 함
-- 새 댓글 등록 후 전체 목록 재조회 안 함
-- 방명록 첫 화면은 10분 동안 `sessionStorage` 캐시
-- "새 글 확인"을 눌렀을 때만 강제 새로고침
-- 추천 맛집 / 추천 메뉴 / INFO / 테스트는 Firestore를 사용하지 않음
-
-즉 Firebase는 실제로 공유 데이터가 필요한 방명록에만 집중합니다.
-
----
-
-## 5. 방명록 좋아요
-
-좋아요는 사용자가 실제로 버튼을 눌렀을 때만 Firebase를 사용합니다.
-
-한 좋아요는 transaction으로:
-- 방명록 문서 읽기
-- 해당 UID가 이미 좋아요했는지 확인
-- likes 하위 문서 생성
-- likeCount +1
-
-방문만 해서는 좋아요 관련 read/write가 발생하지 않습니다.
-
----
-
-## 6. GitHub Pages 배포
-
-저장소에 이 파일들을 그대로 올린 뒤:
-
-`Settings > Pages`
-
-에서 배포 브랜치를 선택하면 됩니다.
-
-추천:
-- Branch: `main`
-- Folder: `/ (root)`
-
----
-
-## 7. 테스트 추가
-
-현재 TEST 영역은 준비중 상태입니다.
-
-나중에 테스트 기준이 정해지면:
-- 문항
-- 선택지
-- 점수 계산
-- 결과 유형
-
-만 추가하면 됩니다.
-
-Firebase를 사용하지 않고 브라우저 JavaScript에서 계산하도록 만드는 것을 권장합니다.
-
----
-
-## 8. INFO 공개
-
-`site-config.js`
-
-```js
-info: {
-  enabled: true,
-  items: [
-    { title: "PLACE", text: "..." }
-  ]
-}
-```
-
-`enabled: true`로 바꾸면 표시됩니다.
-
----
-
-## 9. 이미지 교체
-
-기본 SVG는 자리 표시용입니다.
-
-예:
-```text
-assets/
-  main.jpg
-  august-menu.jpg
-```
-
-그리고 `site-config.js`에서:
-
-```js
-hero: {
-  image: "./assets/main.jpg"
-}
-
-monthlyMenu: {
-  image: "./assets/august-menu.jpg"
-}
-```
-
-처럼 바꾸면 됩니다.
+참고: [GitHub Pages 공식 가이드](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
