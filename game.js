@@ -10,7 +10,10 @@
   // The choices are stored with the save, so refreshing will not reroll missions.
   const requiredCount = member => Math.min(member.ingredients.length, Math.max(1,
     Number.isInteger(member.requiredIngredients) ? member.requiredIngredients : member.ingredients.length));
-  const STORAGE_KEY = 'cp-cafe-lost-recipe-v4'; // Keeps older saves available for migration.
+  const STORAGE_KEY = 'cp-cafe-lost-recipe-v4'; // 기존 저장 기록 유지
+  // 서버 없이 생성하는 임의 발급번호: 예) GB-A1B2-C3D4-E5F6-7890
+  // 번호 자체는 충분히 무작위지만, 서로 다른 기기의 중복 발급/현장 사용 여부를 확인하지는 못합니다.
+  const RECEIPT_PATTERN = /^GB-(?:[0-9A-F]{4}-){3}[0-9A-F]{4}$/;
   const PHASES = ['talk','search','solve','found','member_done','finished'];
   let state;
   let storageEnabled = true;
@@ -98,7 +101,8 @@
     result.messages=[...result.messages,...raw.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string')
       .slice(-280).map(m=>({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:result.currentMemberId}))].slice(-280);
     if(result.phase==='finished'){
-      result.receiptId=typeof raw.receiptId==='string'&&/^DEMO-[A-Z0-9]{8}$/.test(raw.receiptId)?raw.receiptId:null;
+      // 구버전 DEMO 번호는 보관하지 않고, 완료 기록은 유지한 채 새 형식으로 발급합니다.
+      result.receiptId=typeof raw.receiptId==='string'&&RECEIPT_PATTERN.test(raw.receiptId)?raw.receiptId:null;
       result.issuedAt=typeof raw.issuedAt==='string'&&raw.issuedAt.length<40?raw.issuedAt:null;
     }
     return result;
@@ -301,13 +305,16 @@
     }
   }
   function ensureReceipt(){
-    if(state.receiptId)return;
-    const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    if(state.receiptId && RECEIPT_PATTERN.test(state.receiptId)) return;
+    // 64-bit random number: extremely low collision risk for a small event,
+    // but no global uniqueness/one-person-one-code guarantee without a backend.
     const bytes=new Uint8Array(8);
-    if(globalThis.crypto?.getRandomValues)crypto.getRandomValues(bytes);
-    else for(let i=0;i<8;i++)bytes[i]=Math.floor(Math.random()*256);
-    state.receiptId='DEMO-'+Array.from(bytes,x=>chars[x%chars.length]).join('');
+    if(globalThis.crypto?.getRandomValues)globalThis.crypto.getRandomValues(bytes);
+    else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);
+    const hex=Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('').toUpperCase();
+    state.receiptId='GB-'+hex.match(/.{4}/g).join('-');
     state.issuedAt=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    persist();
   }
   function create(tag,className,text){
     const el=document.createElement(tag);
@@ -420,11 +427,11 @@
     line('♡ A LITTLE GIFT FOR YOU ♡',182,25,'#78acd2','800');line('✿  ✦  ✿',240,39,'#e4bb57');
     line('선물 교환증',320,60,'#367fb2','900');line('세 가지 요리의 재료를 모두 찾았어요!',393,26,'#668ca8','500');
     box(300,440,300,125,16,'#e9f6ff','#83bde4');line('MISSION COMPLETE',488,27);line('✓',542,42,'#4caa80');
-    const rows=[['닉네임',state.nickname],['찾은 재료',`${state.collected.length}개 모두 완료`],['선물',story.receipt.gift],['시연 번호',state.receiptId],['발행일',state.issuedAt]];
+    const rows=[['닉네임',state.nickname],['찾은 재료',`${state.collected.length}개 모두 완료`],['선물',story.receipt.gift],['발급번호',state.receiptId],['발행일',state.issuedAt]];
     let y=625;for(const [key,val]of rows){ctx.beginPath();ctx.strokeStyle='#c4dfed';ctx.moveTo(160,y+25);ctx.lineTo(740,y+25);ctx.stroke();ctx.textAlign='left';ctx.fillStyle='#84a4bc';ctx.font='500 23px "Noto Sans KR","Malgun Gothic",sans-serif';ctx.fillText(key,160,y);
-      ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font='bold 23px "Noto Sans KR","Malgun Gothic",sans-serif';ctx.fillText(String(val),740,y,410);y+=84;}
-    line('✦  ✦  ✦',1040,28,'#edc267');line('시연용 · 실제 상품 교환권이 아닙니다',1090,22,'#996c3f');
-    canvas.toBlob(blob=>{if(blob)saveFile(blob,'선물교환증_시연용.png');},'image/png');
+      ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font=`bold ${key==='발급번호'?19:23}px "Noto Sans KR","Malgun Gothic",sans-serif`;ctx.fillText(String(val),740,y,460);y+=84;}
+    line('✦  ✦  ✦',1040,28,'#edc267');line('곰밥집을 도와줘서 고마워요 ♡',1090,22,'#996c3f');
+    canvas.toBlob(blob=>{if(blob)saveFile(blob,`곰밥집_선물교환증_${state.receiptId}.png`);},'image/png');
   }
   function toggleSettings(open){$('settings-menu').hidden=!open;$('settings-button').setAttribute('aria-expanded',String(open));}
   $('settings-button').addEventListener('click',()=>toggleSettings($('settings-menu').hidden));
@@ -434,7 +441,7 @@
   dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
   $('ticket-download').addEventListener('click',downloadTicket);
   $('ticket-print').addEventListener('click',()=>window.print());
-  $('reset-game').addEventListener('click',()=>{toggleSettings(false);if(!confirm('대화 기록과 시연용 교환증을 지우고 처음부터 다시 시작할까요?'))return;selectedMemberId=null;$('nickname-input').value='';renderMemberMenu();updateStartButton();state=newState();persist();render();});
+  $('reset-game').addEventListener('click',()=>{toggleSettings(false);if(!confirm('대화 기록과 발급번호를 지우고 처음부터 다시 시작할까요?'))return;selectedMemberId=null;$('nickname-input').value='';renderMemberMenu();updateStartButton();state=newState();persist();render();});
   $('save-export').addEventListener('click',()=>{toggleSettings(false);saveFile(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),'cp-cafe-story-save.json');});
   $('save-import').addEventListener('click',()=>{toggleSettings(false);$('save-file').click();});
   $('save-file').addEventListener('change',async e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;
