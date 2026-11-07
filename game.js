@@ -1,250 +1,153 @@
 (() => {
   'use strict';
-  const story = window.STORY_DATA;
-  const KEY = 'after-the-signal-save-v1';
-  const $ = (id) => document.getElementById(id);
-  const max = (v) => Math.max(0, Math.min(100, v));
-  const chapterData = () => story.chapters[state.chapter - 1];
-  const blankState = () => ({
-    version: 1, chapter: 1, phase: 'chat', chapterTurn: 0,
-    trust: story.initial.trust, affection: story.initial.affection,
-    flags: {}, seenIntents: [], messages: [], choiceLog: [], ending: null
-  });
+  const data = window.CAFE_DATA;
+  const KEY = 'cp-cafe-chat-save-v1';
+  const $ = id => document.getElementById(id);
+  const chapters = data.story.chapters;
+  let available = true;
   let state;
-  let storageAvailable = true;
-  try {
-    const raw = localStorage.getItem(KEY);
-    state = raw ? validateSave(JSON.parse(raw)) : null;
-  } catch (_) { storageAvailable = false; }
-  if (!state) {
-    state = blankState();
-    beginChapter(1, true);
-  }
-
-  function validateSave(v) {
-    if (!v || v.version !== 1 || !Number.isInteger(v.chapter) || v.chapter < 1 || v.chapter > 3) return null;
-    if (!['chat', 'choice', 'cleared', 'ended'].includes(v.phase)) return null;
-    if (!Array.isArray(v.messages) || !Array.isArray(v.choiceLog)) return null;
+  function emptyState() { return {version:1, chapter:0, phase:'info', turns:0, trust:0, messages:[], flags:{}, choices:[], seen:[], ending:null}; }
+  function validSave(s) {
+    if (!s || s.version!==1 || !Number.isInteger(s.chapter) || s.chapter<0 || s.chapter>chapters.length) return null;
+    if (!['info','chat','choice','cleared','ended'].includes(s.phase) || !Array.isArray(s.messages)) return null;
     return {
-      version: 1, chapter: v.chapter, phase: v.phase,
-      chapterTurn: Math.max(0, Math.min(10000, Number(v.chapterTurn) || 0)),
-      trust: max(Number(v.trust) || 0), affection: max(Number(v.affection) || 0),
-      flags: v.flags && typeof v.flags === 'object' && !Array.isArray(v.flags) ? v.flags : {},
-      seenIntents: Array.isArray(v.seenIntents) ? v.seenIntents.filter(x => typeof x === 'string').slice(0, 50) : [],
-      messages: v.messages.slice(-500).filter(m => m && ['character', 'player', 'system'].includes(m.role) && typeof m.text === 'string').map(m => ({role:m.role,text:m.text.slice(0,500)})),
-      choiceLog: v.choiceLog.slice(0,10).filter(x => x && typeof x.result === 'string' && typeof x.chapter === 'number').map(x => ({chapter:x.chapter,result:x.result.slice(0,140)})),
-      ending: ['warm','farewell'].includes(v.ending) ? v.ending : null
+      version:1,chapter:s.chapter,phase:s.phase,turns:Math.max(0,Math.min(100,Number(s.turns)||0)),
+      trust:Math.max(0,Math.min(100,Number(s.trust)||0)),
+      messages:s.messages.filter(m=>m && ['bot','player','system'].includes(m.role)&&typeof m.text==='string').slice(-200).map(m=>({role:m.role,text:m.text.slice(0,500)})),
+      flags:s.flags && typeof s.flags==='object'&&!Array.isArray(s.flags) ? s.flags : {},
+      choices:Array.isArray(s.choices)?s.choices.filter(x=>typeof x==='string').slice(0,20):[],
+      seen:Array.isArray(s.seen)?s.seen.filter(x=>typeof x==='string').slice(0,30):[],
+      ending: ['promise','today'].includes(s.ending)?s.ending:null
     };
   }
-  function save() {
-    if (!storageAvailable) return;
-    try { localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch (_) { storageAvailable = false; }
+  try {const saved=localStorage.getItem(KEY);state=saved?validSave(JSON.parse(saved)):null;} catch (_) {available=false;}
+  function add(role,text) { state.messages.push({role,text}); if(state.messages.length>200) state.messages=state.messages.slice(-200); }
+  if (!state) {state=emptyState();data.character.intro.forEach(text=>add('bot',text));}
+  function save() {if(!available)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(_){available=false;}}
+  function normal(s) {return s.normalize('NFKC').toLowerCase().replace(/[\u200b-\u200d\ufeff]/g,'').trim();}
+  function infoKey(text) {const q=normal(text);return data.infoKeywords.find(p=>new RegExp(p.re,'i').test(q))?.id||null;}
+  function answerInfo(id) {
+    const label=data.infoLabels[id]||'카페 정보';
+    const value=(data.information[id]||'').trim();
+    return value?`💙 ${label} 안내해 드릴게요!\n\n${value}`:`💙 ${label}는 지금 안내를 준비 중이에요. 확정되는 대로 공지할게요!`;
   }
-  function add(role, text) { state.messages.push({role, text}); }
-  function beginChapter(n, init=false) {
-    state.chapter = n;
-    state.chapterTurn = 0;
-    state.seenIntents = [];
-    state.phase = 'chat';
-    state.ending = null;
-    const ch = story.chapters[n-1];
-    add('system', `CHAPTER ${String(n).padStart(2,'0')} — ${ch.title}`);
-    const opening = [...ch.opening];
-    if (n===2) {
-      if (state.flags.promise_to_wait) opening.unshift('기다려 줘서 고마워.');
-      else if (state.flags.letter_avoided) opening.unshift('지난번엔 편지 얘기를 피했었지.');
-    }
-    if (n===3 && state.flags.believed_him) opening.unshift('네가 나를 믿는다고 했던 말, 기억하고 있어.');
-    opening.forEach(s => add('character',s));
-    if (!init) save();
-  }
-  const patterns = [
-    {intent:'negative', re: /(안\s*보고\s*싶|안\s*그리워|안\s*믿|못\s*믿|거짓말|싫어|미워|꺼져|화나|화가\s*나|말도\s*안\s*돼)/},
-    {intent:'secret', re: /(비밀|숨기|감추|편지|봉투|기록|진실|말\s*못\s*해|숨겼)/},
-    {intent:'why', re: /(왜|이유|어째서|무슨\s*일|뭔\s*일|뭐\s*때문|연락한\s*이유)/},
-    {intent:'sorry', re: /(미안|죄송|사과|잘못했)/},
-    {intent:'miss', re: /(보고\s*싶|그리웠|그립|기다렸|생각났|보고싶)/},
-    {intent:'trust', re: /(믿어|믿을게|믿는다|괜찮아|함께|같이\s*있|곁에|약속)/},
-    {intent:'feeling', re: /(잘\s*지냈|기분|어떻게\s*지냈|외로|무서|슬퍼|행복|아프|힘들)/},
-    {intent:'greeting', re: /(안녕|반가|오랜만|하이|ㅎㅇ|잘\s*자|좋은\s*아침)/},
-    {intent:'question', re: /[?？]|(뭐야|뭐해|어떻게|언제|어디|누구|뭔데|할까)/}
-  ];
-  function detectIntent(text) {
-    const normalized = text.normalize('NFKC').toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g,'').trim();
-    for (const item of patterns) if (item.re.test(normalized)) return item.intent;
+  function intent(text) {
+    const q=normal(text);
+    if (/(안\s*좋|싫|화\s*나|안\s*할래|귀찮)/.test(q)) return 'default';
+    if (/(고마워|감사|좋아|함께|같이|약속|응원|사랑)/.test(q)) return 'kind';
+    if (/(기쁘|신나|행복|즐거|최고|설레|반가워)/.test(q)) return 'happy';
+    if (/(왜|어떻게|무슨|뭐|궁금|알려|\?|？)/.test(q)) return 'curious';
+    if (/(안녕|하이|오랜만|ㅎㅇ|잘\s*지냈)/.test(q)) return 'greeting';
     return 'default';
   }
-  function replyFor(intent) {
-    const pool = (story.responses[state.chapter][intent] || story.responses[state.chapter].default);
-    // 표현이 반복될 때의 어색함을 조금 줄이기 위한 고정형 로테이션
-    const idx = (state.chapterTurn + state.seenIntents.length - 1) % pool.length;
-    let result = pool[idx];
-    if (state.chapter === 2 && intent === 'trust' && state.flags.promise_to_wait) result = '지난번에도 기다리겠다고 했지. 그 말 계속 기억하고 있어.';
-    if (state.chapter === 3 && intent === 'negative' && state.flags.doubted_him) result = '지난번에도 믿기 어렵다고 했었지. 그 마음을 무시할 생각 없어.';
-    return result;
-  }
-  function eventReady() {
-    return state.phase === 'chat' && (state.chapterTurn >= 5 ||
-      (state.chapterTurn >= 3 && state.seenIntents.some(i => ['why','secret','trust','miss','negative'].includes(i))));
-  }
-  function sendMessage(text) {
-    if (state.phase !== 'chat') return;
-    const input = text.trim().slice(0,180);
-    if (!input) return;
-    const intent = detectIntent(input);
-    const firstIntent = !state.seenIntents.includes(intent);
-    state.chapterTurn++;
-    add('player', input);
-    if (firstIntent) {
-      state.seenIntents.push(intent);
-      if (intent === 'trust' || intent === 'sorry') state.trust = max(state.trust + 1);
-      if (intent === 'miss') state.affection = max(state.affection + 1);
-      if (intent === 'negative') state.trust = max(state.trust - 1);
+  function addInfo(id,ask) {if(ask)add('player',ask);add('bot',answerInfo(id));save();render();}
+  function reply(text) {
+    if(state.phase==='choice'||state.phase==='cleared'||state.phase==='ended') return;
+    const msg=text.trim().slice(0,220);if(!msg)return;
+    if(/^(스토리|이야기|챕터)\s*(시작|해줘|할래|보고\s*싶)/.test(normal(msg))) {add('player',msg);startStory();return;}
+    const info=infoKey(msg);if(info){addInfo(info,msg);return;}
+    add('player',msg);
+    if(state.phase==='info'){
+      add('bot','헤헤, 그렇구나! 💙 카페 정보도 물어봐 주세요. 조금 더 특별한 대화가 하고 싶다면 아래에서 ‘스토리 시작’을 눌러 주세요!');
+    } else {
+      const id=intent(msg), chapter=chapters[state.chapter-1];
+      const pool=chapter.replies[id]||chapter.replies.default;
+      const idx=(state.turns+state.seen.length)%pool.length;
+      add('bot',pool[idx]);state.turns++;
+      if(!state.seen.includes(id))state.seen.push(id);
     }
-    add('character',replyFor(intent));
-    save(); render();
+    save();render();
   }
-  function startEvent() {
-    if (!eventReady()) return;
-    const e=chapterData().event;
-    state.phase='choice';
-    add('system', `STORY EVENT — ${e.title}`);
-    e.lines.forEach(line=>add('character',line));
-    save(); render();
+  function startStory() {
+    if(state.phase==='info'){
+      state.chapter=1;state.phase='chat';state.turns=0;state.seen=[];
+      add('system',`CHAPTER 01 · ${chapters[0].title}`);
+      add('bot',data.story.intro);chapters[0].opening.forEach(text=>add('bot',text));
+      save();render();
+    } else if(state.phase==='chat') {add('bot','지금은 이야기를 나누는 중이에요! 조금 더 얘기하면 다음 장면을 열 수 있어요.');save();render();}
   }
-  function takeChoice(id) {
-    if (state.phase !== 'choice') return;
-    const choice = chapterData().event.choices.find(c=>c.id===id);
-    if (!choice) return;
-    add('player',choice.label);
-    choice.reply.forEach(line=>add('character',line));
-    state.trust=max(state.trust+choice.effect.trust);
-    state.affection=max(state.affection+choice.effect.affection);
-    state.flags[choice.flag]=true;
-    state.choiceLog.push({chapter:state.chapter,result:choice.result});
-    add('system',`선택 기록 · ${choice.result}`);
-    state.phase='cleared';
-    save(); render();
+  function eventReady(){return state.phase==='chat'&&state.turns>=3;}
+  function openEvent() {
+    if(!eventReady())return;
+    state.phase='choice';const e=chapters[state.chapter-1].event;
+    add('system',`STORY EVENT · ${e.title}`);e.lines.forEach(t=>add('bot',t));save();render();
   }
-  function nextChapter() {
-    if (state.phase !== 'cleared') return;
-    if (state.chapter<story.chapters.length) beginChapter(state.chapter+1);
-    else {
-      const warm = state.trust>=56 && state.flags.asked_to_stay &&
-        (state.flags.believed_him || state.flags.promise_to_wait || state.flags.letter_seen);
-      state.ending=warm?'warm':'farewell';
-      state.phase='ended';
-      const ending=story.ending[state.ending];
-      add('system',ending.title);
-      ending.lines.forEach(line=>add('character',line));
+  function choose(id) {
+    if(state.phase!=='choice')return;
+    const e=chapters[state.chapter-1].event,c=e.choices.find(v=>v.id===id);if(!c)return;
+    add('player',c.text);add('bot',c.reply);
+    state.trust=Math.max(0,Math.min(100,state.trust+c.trust));
+    state.flags[c.flag]=true;state.choices.push(id);state.phase='cleared';
+    add('system','선택이 저장되었어요 ♡');save();render();
+  }
+  function next() {
+    if(state.phase!=='cleared')return;
+    if(state.chapter<chapters.length){
+      state.chapter++;state.phase='chat';state.turns=0;state.seen=[];
+      const ch=chapters[state.chapter-1];add('system',`CHAPTER ${String(state.chapter).padStart(2,'0')} · ${ch.title}`);ch.opening.forEach(t=>add('bot',t));
+    } else {
+      state.phase='ended';state.ending=state.flags.promise?'promise':'today';
+      data.story.endings[state.ending].forEach((t,i)=>add(i===0?'system':'bot',t));
     }
-    save(); render();
+    save();render();
   }
-  function node(tag,cls,text) {
-    const el=document.createElement(tag);
-    if (cls) el.className=cls;
-    if (text!==undefined) el.textContent=text;
-    return el;
-  }
-  function makeAction(kicker,title,desc) {
-    const panel=node('div','action-panel');
-    panel.append(node('div','action-kicker',kicker),node('div','action-title',title),node('div','action-desc',desc));
-    return panel;
-  }
-  function actionButton(label,fn,primary=false) {
-    const b=node('button',primary?'primary':'',label); b.type='button'; b.addEventListener('click',fn);return b;
-  }
-  function renderActions() {
-    const holder=$('story-action');holder.replaceChildren();
-    if (state.phase==='chat'&&eventReady()) {
-      const e=chapterData().event;
-      const panel=makeAction('EVENT READY','새로운 메시지가 도착했습니다',`${e.title} · 준비되면 핵심 사건을 진행할 수 있습니다. 지금은 자유대화를 계속해도 됩니다.`);
-      panel.append(actionButton('스토리 이벤트 진행하기 →',startEvent,true));holder.append(panel);
-    } else if (state.phase==='choice') {
-      const e=chapterData().event;
-      const panel=makeAction('YOUR CHOICE',e.title,'이 장면에서는 답장을 선택해 주세요. 선택한 결과는 다음 챕터에 반영됩니다.');
-      e.choices.forEach(c=>panel.append(actionButton(c.label,()=>takeChoice(c.id))));holder.append(panel);
-    } else if (state.phase==='cleared') {
-      const last=state.choiceLog[state.choiceLog.length-1];
-      const panel=makeAction('CHAPTER CLEARED','이야기가 이어집니다',`${last?.result||'이벤트 완료'} 신뢰도 ${state.trust} · 친밀도 ${state.affection}`);
-      panel.append(actionButton(state.chapter<3?'다음 챕터로 →':'엔딩 확인하기 →',nextChapter,true));holder.append(panel);
-    } else if (state.phase==='ended') {
-      const ending=story.ending[state.ending];
-      const panel=makeAction('THE END',ending.title,'다른 선택에 따라 결말이 달라집니다. 처음부터 다시 플레이할 수 있습니다.');
-      panel.append(actionButton('처음부터 다시 플레이하기 ↻',reset,true));holder.append(panel);
+  function el(tag,className,text){const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;}
+  function makeButton(label,fn,primary=false){const b=el('button',primary?'primary':'',label);b.type='button';b.addEventListener('click',fn);return b;}
+  function renderActions(){
+    const root=$('story-actions');root.replaceChildren();
+    if(!(eventReady()||['choice','cleared','ended'].includes(state.phase)))return;
+    const box=el('section','action-box');
+    function top(kicker,title,description){box.append(el('span','action-label',kicker),el('div','action-title',title),el('div','action-description',description));}
+    if(eventReady()){
+      top('NEW EVENT ✦','새로운 이야기가 열렸어요!','준비되면 다음 장면으로 넘어가요. 자유대화를 더 이어가도 괜찮아요.');
+      box.append(makeButton('이야기 계속하기 →',openEvent,true));
+    }else if(state.phase==='choice'){
+      const e=chapters[state.chapter-1].event;top('MAKE A CHOICE',e.title,'어떤 답장을 보낼지 골라 주세요.');
+      e.choices.forEach(c=>box.append(makeButton(c.text,()=>choose(c.id))));
+    }else if(state.phase==='cleared'){
+      top('CHAPTER CLEAR ♡','참 잘했어요!','방금 고른 선택은 다음 이야기에도 반영됩니다.');
+      box.append(makeButton(state.chapter===chapters.length?'엔딩 보기 →':'다음 챕터 열기 →',next,true));
+    }else{
+      top('THE END ✦','오늘의 이야기 완료','채팅창 오른쪽 위 메뉴에서 처음부터 다시 즐길 수 있어요.');
     }
+    root.append(box);
   }
-  function renderMessages() {
-    const list=$('message-list');
-    list.replaceChildren();
-    const fragment=document.createDocumentFragment();
-    state.messages.forEach((m)=>{
-      const row=node('div',`message ${m.role}`);
-      row.append(node('div','bubble',m.text)); fragment.append(row);
-    });
-    list.append(fragment);
-  }
-  function renderSidebars() {
-    $('chapter-subtitle').textContent=`CHAPTER ${String(state.chapter).padStart(2,'0')} · ${chapterData().title}`;
-    $('detail-title').textContent=`챕터 ${String(state.chapter).padStart(2,'0')}`;
-    $('detail-subtitle').textContent=chapterData().title;
-    $('trust-number').textContent=state.trust;
-    $('affection-number').textContent=state.affection;
-    $('trust-meter').style.width=`${state.trust}%`;
-    $('affection-meter').style.width=`${state.affection}%`;
-    const nav=$('chapter-nav');nav.replaceChildren();
-    for (const ch of story.chapters) {
-      const current=ch.id===state.chapter;
-      const locked=ch.id>state.chapter;
-      const item=node('div',`chapter-link ${current?'active':''} ${locked?'locked':''}`);
-      item.append(node('span','chapter-number',`0${ch.id}`));
-      const group=node('span');group.append(node('span','chapter-name',locked?'???':ch.title),node('span','chapter-desc',locked?'잠김':current?'진행 중':'완료'));item.append(group);nav.append(item);
+  function render(){
+    $('character-name').textContent=data.character.name;
+    $('profile-avatar').textContent=data.character.avatar;
+    $('character-subtitle').textContent=data.character.subtitle;
+    $('chapter-label').textContent=state.phase==='info'?'INFO MODE':state.phase==='ended'?'THE END':`CHAPTER ${String(state.chapter).padStart(2,'0')}`;
+    const root=$('messages');root.replaceChildren();const fragment=document.createDocumentFragment();
+    for(const m of state.messages){
+      const row=el('div',`message ${m.role}`);
+      if(m.role==='bot') row.append(el('div','message-avatar',data.character.avatar));
+      row.append(el('div','bubble',m.text));fragment.append(row);
     }
-    const mem=$('memory-list');mem.replaceChildren();
-    if (!state.choiceLog.length) mem.append(node('li','', '아직 중요한 선택이 없습니다.'));
-    else state.choiceLog.forEach(c=>mem.append(node('li','',`챕터 ${c.chapter}: ${c.result}`)));
-    let progress=state.phase==='ended'?100:state.phase==='cleared'?100:state.phase==='choice'?75:Math.min(60,5+state.chapterTurn*10);
-    $('phase-progress-fill').style.width=`${progress}%`;
-    $('storage-status').textContent=storageAvailable?'현재 브라우저에 자동 저장됩니다. 브라우저 데이터를 지우면 기록이 사라질 수 있습니다.':'자동 저장을 사용할 수 없는 환경입니다. 필요한 경우 진행 데이터를 내보내 주세요.';
-    const locked=state.phase!=='chat';
-    $('message-input').disabled=locked;
-    $('send-button').disabled=locked;
-    $('message-input').placeholder=state.phase==='choice'?'먼저 선택지를 골라 주세요':state.phase==='cleared'?'다음 챕터로 이동해 주세요':state.phase==='ended'?'게임이 끝났습니다':'무슨 말이든 입력해 보세요...';
-    $('composer-caption').textContent=locked?'현재는 스토리 진행 단계입니다.':'Enter로 전송 · 무료 / API 없음 · 자동 저장';
+    root.append(fragment);renderActions();
+    const locked=['choice','cleared','ended'].includes(state.phase);
+    $('message-input').disabled=locked;$('send-button').disabled=locked;
+    $('message-input').placeholder=locked?'먼저 스토리 선택지를 진행해 주세요':'궁금한 내용을 자유롭게 입력해 주세요 ♡';
+    for(const b of document.querySelectorAll('[data-info]'))b.disabled=locked;
+    const storyChip=document.querySelector('[data-start-story]');storyChip.hidden=state.phase!=='info';
+    $('thread').scrollTop=$('thread').scrollHeight;
   }
-  function render() {
-    renderMessages();renderActions();renderSidebars();
-    const scroll=$('chat-content');scroll.scrollTop=scroll.scrollHeight;
-  }
-  function reset() {
-    if (!confirm('대화·선택 기록을 모두 지우고 처음부터 다시 시작할까요?')) return;
-    state=blankState();beginChapter(1,true);save();render();
-  }
-  function exportSave() {
-    const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json;charset=utf-8'});
-    const url=URL.createObjectURL(blob);const link=document.createElement('a');
-    link.href=url;link.download='after-the-signal-save.json';document.body.append(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
-  async function importSave(file) {
-    if (!file || file.size>1_000_000) { alert('1MB 이하 JSON 저장 파일만 읽을 수 있습니다.');return; }
-    try {
-      const loaded=validateSave(JSON.parse(await file.text()));
-      if (!loaded) throw new Error('invalid');
-      if (!confirm('현재 진행 기록을 저장 파일로 교체할까요?')) return;
-      state=loaded;save();render();closePanel();
-    } catch (_) { alert('읽을 수 없는 저장 파일입니다.'); }
-  }
-  function openPanel(){ $('details').classList.add('open');$('overlay').classList.add('open');}
-  function closePanel(){ $('details').classList.remove('open');$('overlay').classList.remove('open');}
-  $('chat-form').addEventListener('submit',(e)=>{e.preventDefault();const inp=$('message-input');sendMessage(inp.value);inp.value='';inp.focus();});
-  $('toggle-panel').addEventListener('click',openPanel);
-  $('close-panel').addEventListener('click',closePanel);
-  $('overlay').addEventListener('click',closePanel);
-  $('reset-save').addEventListener('click',reset);
-  $('export-save').addEventListener('click',exportSave);
-  $('import-save').addEventListener('click',()=>$('import-file').click());
-  $('import-file').addEventListener('change',e=>{const f=e.target.files?.[0];importSave(f);e.target.value='';});
+  function toggleMenu(open){$('popup-menu').hidden=!open;$('menu-toggle').setAttribute('aria-expanded',open?'true':'false');}
+  $('menu-toggle').addEventListener('click',()=>toggleMenu($('popup-menu').hidden));
+  document.addEventListener('click',e=>{if(!e.target.closest('.popup-menu')&&!e.target.closest('.menu-toggle'))toggleMenu(false);});
+  $('chat-form').addEventListener('submit',e=>{e.preventDefault();reply($('message-input').value);$('message-input').value='';$('message-input').focus();});
+  for(const b of document.querySelectorAll('[data-info]'))b.addEventListener('click',()=>addInfo(b.dataset.info,data.infoLabels[b.dataset.info]+' 알려줘'));
+  document.querySelector('[data-start-story]').addEventListener('click',startStory);
+  $('save-reset').addEventListener('click',()=>{toggleMenu(false);if(!confirm('채팅 기록을 지우고 처음부터 시작할까요?'))return;state=emptyState();data.character.intro.forEach(t=>add('bot',t));save();render();});
+  $('save-export').addEventListener('click',()=>{
+    toggleMenu(false);const b=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(b),a=document.createElement('a');a.href=url;a.download='cp-cafe-chat-save.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+  $('save-import').addEventListener('click',()=>{$('save-file').click();toggleMenu(false);});
+  $('save-file').addEventListener('change',async e=>{
+    const f=e.target.files?.[0];e.target.value='';if(!f)return;
+    if(f.size>1000000){alert('1MB 이하 JSON 파일만 불러올 수 있어요.');return;}
+    try{const parsed=validSave(JSON.parse(await f.text()));if(!parsed)throw Error('invalid');if(!confirm('기존 채팅 기록을 불러온 기록으로 바꿀까요?'))return;state=parsed;save();render();}
+    catch(_){alert('읽을 수 없는 저장 파일입니다.');}
+  });
   save();render();
 })();
