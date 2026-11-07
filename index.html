@@ -2,57 +2,70 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#dceeff" />
-  <meta name="description" content="멤버들과 채팅하고 미션을 풀어 카페 정보와 굿즈를 해금하는 CP 카페 게임" />
-  <title>CP CAFE · SECRET CHAT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#e9f5fc" />
+  <meta name="description" content="멤버들과 대화를 이어가며 사라진 레시피의 재료를 찾아보세요." />
+  <title>우리만의 레시피 · PRIVATE CHAT</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="cafe-data.js" defer></script>
+  <script src="story-data.js" defer></script>
   <script src="game.js" defer></script>
 </head>
 <body>
-  <main class="chat-frame" aria-label="CP 카페 멤버 채팅 미션 게임">
+  <main class="chat-shell" aria-label="캐릭터 채팅 스토리 게임">
     <header class="chat-header">
-      <div class="ribbon" aria-hidden="true">✳ &nbsp; BLUE · YELLOW · WHITE &nbsp; ✳</div>
+      <div class="header-topline"><span>✳ A LITTLE STORY FOR YOU</span><span class="topline-star" aria-hidden="true">✦</span></div>
       <div class="header-main">
-        <div class="profile-avatar" id="profile-avatar" aria-hidden="true">🐻</div>
-        <div class="profile-copy">
-          <div class="name-line"><strong id="character-name">멤버 A</strong><span class="online"><i></i> CHAT</span></div>
-          <p id="character-subtitle">멤버와 대화하며 작은 비밀을 찾아요.</p>
+        <span class="profile" id="profile-emoji" aria-hidden="true">🐻</span>
+        <div class="profile-text"><strong id="profile-name">새 메시지</strong><span id="profile-status">지금 대화 중 · ♡</span></div>
+        <button class="menu-button" id="settings-button" type="button" aria-label="설정" aria-expanded="false">⋯</button>
+        <div class="settings-menu" id="settings-menu" hidden>
+          <button id="save-export" type="button">대화 기록 저장</button>
+          <button id="save-import" type="button">대화 기록 불러오기</button>
+          <input id="save-file" type="file" accept="application/json,.json" hidden />
+          <button id="reset-game" type="button" class="danger">이야기 처음부터</button>
         </div>
-        <button class="icon-button menu-toggle" id="menu-toggle" aria-expanded="false" aria-label="설정 메뉴 열기" type="button">⋯</button>
-      </div>
-      <div class="header-bottom">
-        <span class="chat-label" id="chat-title">♡ &nbsp; CP CAFE SECRET CHAT</span>
-        <span class="chapter-label" id="chapter-label">MISSION 01 / 03</span>
-      </div>
-      <div class="member-progress" id="member-progress" aria-label="멤버 진행도"></div>
-      <div class="popup-menu" id="popup-menu" hidden>
-        <button type="button" id="save-export">진행 기록 내보내기</button>
-        <button type="button" id="save-import">진행 기록 불러오기</button>
-        <input id="save-file" type="file" accept="application/json,.json" hidden />
-        <button type="button" id="save-reset" class="danger">처음부터 다시 시작</button>
       </div>
     </header>
-    <section class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions">
-      <div class="date-divider"><span>세 개의 대화, 세 개의 작은 선물 ♡</span></div>
+
+    <section class="conversation" id="conversation" role="log" aria-live="polite" aria-relevant="additions text">
+      <div class="conversation-intro" aria-hidden="true"><span>♡ 새 대화가 도착했어요 ♡</span></div>
       <div id="messages"></div>
-      <div id="story-actions" aria-live="polite"></div>
+      <div id="story-control" aria-live="polite"></div>
     </section>
+
     <footer class="chat-footer">
-      <div class="chips" id="quick-actions" aria-label="대화 바로가기">
-        <button type="button" id="quick-hello">💬 인사하기</button>
-        <button type="button" id="quick-hint">💡 미션 힌트</button>
-        <button type="button" id="quick-info">📍 카페 정보</button>
-        <button type="button" id="quick-items" class="story-chip">🎁 내 획득품</button>
-      </div>
-      <form class="composer" id="chat-form">
-        <label class="sr-only" for="message-input">메시지 입력</label>
-        <input id="message-input" maxlength="220" autocomplete="off" placeholder="멤버에게 자유롭게 답장해 주세요 ♡" required />
-        <button id="send-button" type="submit" aria-label="메시지 보내기">➤</button>
+      <form id="chat-form" class="chat-form">
+        <label for="reply-input" class="sr-only">답장 입력</label>
+        <input id="reply-input" maxlength="180" autocomplete="off" placeholder="메시지를 입력해 주세요" required />
+        <button id="send-button" type="submit" aria-label="메시지 보내기"><span>➤</span></button>
       </form>
-      <p class="footer-hint">FREE · NO AI API · 체험판 보상은 실제 교환권이 아닙니다</p>
+      <p class="footer-caption" id="footer-caption">type a message ✿</p>
     </footer>
   </main>
+
+  <dialog id="ticket-dialog" class="ticket-dialog" aria-labelledby="ticket-title">
+    <div class="ticket-panel">
+      <button type="button" id="ticket-close" class="ticket-close" aria-label="교환증 닫기">×</button>
+      <div id="print-ticket" class="ticket-paper">
+        <p class="ticket-kicker">♡ A LITTLE GIFT FOR YOU ♡</p>
+        <div class="ticket-ornament" aria-hidden="true">✿ &nbsp; ✦ &nbsp; ✿</div>
+        <h2 id="ticket-title">선물 교환증</h2>
+        <p class="ticket-subtitle">잃어버린 레시피를 완성해 주셔서 고마워요!</p>
+        <div class="ticket-stamp">MISSION<br/>COMPLETE <span>✓</span></div>
+        <p class="ticket-row"><span>찾은 재료</span><strong id="ticket-ingredients">설탕 · 우유 · 딸기</strong></p>
+        <p class="ticket-row"><span>선물</span><strong id="ticket-gift">시크릿 기념 선물</strong></p>
+        <p class="ticket-row"><span>발행 번호</span><strong id="ticket-number">DEMO-000000</strong></p>
+        <p class="ticket-row"><span>발행일</span><strong id="ticket-date">-</strong></p>
+        <div class="ticket-divider">✦ ✦ ✦</div>
+        <p class="ticket-message" id="ticket-message">당신 덕분에 카페 준비가 무사히 끝났어요.</p>
+        <p class="ticket-warning">시연용 이미지입니다. 실제 현장 상품 교환이나 중복 사용 방지는 지원하지 않습니다.</p>
+      </div>
+      <div class="ticket-actions">
+        <button type="button" id="ticket-download">이미지로 저장 (PNG)</button>
+        <button type="button" id="ticket-print">인쇄 / PDF 저장</button>
+      </div>
+      <p class="dialog-hint">실제 교환권으로 운영하려면 서버에서 고유번호 발급·사용 확인이 필요합니다.</p>
+    </div>
+  </dialog>
 </body>
 </html>

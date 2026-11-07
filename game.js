@@ -1,187 +1,259 @@
 (() => {
   'use strict';
-  const data = window.CAFE_DATA;
-  const members = data.members;
-  const KEY = 'cp-cafe-mission-chat-v1';
+  const story = window.STORY_DATA;
+  if (!story || !Array.isArray(story.members) || !story.members.length) return;
   const $ = id => document.getElementById(id);
-  let state;
-  let storageAvailable = true;
+  const members = story.members;
+  const STORAGE_KEY = 'cp-cafe-lost-recipe-v2';
+  const validIds = members.map(m => m.id);
+  const PHASES = ['chat', 'riddle', 'transition', 'done'];
+  let state, storageEnabled = true;
 
   function fresh() {
-    return {version:1,memberIndex:0,phase:'talk',turns:0,attempts:0,messages:[],unlocked:[],items:[],cleared:[],history:[]};
-  }
-  function safeSave(input) {
-    if (!input || input.version !== 1 || !Number.isInteger(input.memberIndex) || input.memberIndex<0 || input.memberIndex>=members.length) return null;
-    if (!['talk','mission','cleared','complete'].includes(input.phase) || !Array.isArray(input.messages)) return null;
-    const validInfo = Object.keys(data.information);
-    const validItems = members.map(m => m.mission.item.id);
-    const validMembers = members.map(m => m.id);
-    const uniq = (input,allowed) => [...new Set(Array.isArray(input)?input.filter(s=>allowed.includes(s)):[])];
     return {
-      version:1,memberIndex:input.memberIndex,phase:input.phase,
-      turns:Math.min(100,Math.max(0,Number(input.turns)||0)),
-      attempts:Math.min(100,Math.max(0,Number(input.attempts)||0)),
-      messages:input.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string').slice(-150).map(m=>({role:m.role,text:m.text.slice(0,1000),memberId:validMembers.includes(m.memberId)?m.memberId:null})),
-      unlocked:uniq(input.unlocked,validInfo),items:uniq(input.items,validItems),cleared:uniq(input.cleared,validMembers),
-      history:Array.isArray(input.history)?input.history.filter(s=>typeof s==='string').slice(-40):[]
+      version: 2, memberIndex: 0, phase: 'chat', chatTurns: 0,
+      tries: 0, messages: [], collected: [], receiptId: null,
+      issuedAt: null, receiptOpened: false
     };
   }
-  try {const raw=localStorage.getItem(KEY);state=raw?safeSave(JSON.parse(raw)):null;} catch (_) {storageAvailable=false;}
-  function save(){if(!storageAvailable)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(_){storageAvailable=false;}}
-  function active(){return members[state.memberIndex];}
-  function add(role,text,memberId=active().id){state.messages.push({role,text,memberId});if(state.messages.length>150)state.messages=state.messages.slice(-150);}
-  function init(){state=fresh();add('system','WELCOME · '+data.title);add('bot',data.intro);active().opening.forEach(t=>add('bot',t));save();}
-  if(!state)init();
-  const normalize = value => String(value||'').normalize('NFKC').toLowerCase().replace(/[\u200b-\u200d\ufeff\s\p{P}]/gu,'');
-  function hasMissionAnswer(text,answers){const q=normalize(text);return q.length>0&&answers.some(a=>q===normalize(a)||((normalize(a).length>=2)&&q.includes(normalize(a))));}
-  function intent(text){
-    const s=String(text||'');
-    if(/(고마워|감사|좋아|사랑|응원|최고|함께|같이)/.test(s))return 'kind';
-    if(/(신나|행복|즐거|기대|설레|기쁘)/.test(s))return 'happy';
-    if(/(왜|어떻게|뭐|무엇|어디|궁금|알려|\?)/.test(s))return 'curious';
-    if(/(안녕|하이|반가워|ㅎㅇ|오랜만)/.test(s))return 'greeting';
+  function validate(obj) {
+    if (!obj || obj.version !== 2 || !Number.isInteger(obj.memberIndex) || obj.memberIndex < 0 || obj.memberIndex >= members.length || !PHASES.includes(obj.phase) || !Array.isArray(obj.messages)) return null;
+    const clean = fresh();
+    clean.memberIndex = obj.memberIndex;
+    clean.phase = obj.phase;
+    clean.chatTurns = Math.min(30, Math.max(0, Number(obj.chatTurns) || 0));
+    clean.tries = Math.min(30, Math.max(0, Number(obj.tries) || 0));
+    clean.messages = obj.messages.filter(m => m && ['bot', 'player', 'system'].includes(m.role) && typeof m.text === 'string').slice(-120).map(m => ({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:validIds[0]}));
+    clean.collected = [...new Set((Array.isArray(obj.collected) ? obj.collected : []).filter(id => validIds.includes(id)))];
+    clean.receiptId = typeof obj.receiptId === 'string' && /^DEMO-[A-Z0-9]{8}$/.test(obj.receiptId) ? obj.receiptId : null;
+    clean.issuedAt = typeof obj.issuedAt === 'string' && obj.issuedAt.length < 40 ? obj.issuedAt : null;
+    clean.receiptOpened = !!obj.receiptOpened;
+    return clean;
+  }
+  function persist() {
+    if (!storageEnabled) return;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch (_) { storageEnabled = false; }
+  }
+  function current() { return members[state.memberIndex]; }
+  function add(role, text, memberId = current().id) {
+    state.messages.push({role, text: String(text), memberId});
+    if (state.messages.length > 120) state.messages = state.messages.slice(-120);
+  }
+  function initialize() {
+    state = fresh();
+    add('system', `${current().name}님이 메시지를 보냈습니다`);
+    current().opening.forEach(line => add('bot', line));
+    persist();
+  }
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    state = saved ? validate(JSON.parse(saved)) : null;
+  } catch (_) { storageEnabled = false; }
+  if (!state) initialize();
+
+  const cleanText = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[\u200b-\u200d\ufeff\s\p{P}\p{S}]/gu, '');
+  function matchesAnswer(text, answers) {
+    const clean = cleanText(text);
+    if (!clean) return false;
+    // 부정 문맥은 정답으로 처리하지 않음. ("설탕은 아닌 것 같은데" 등)
+    if (/(아니|아닌|아닐|아님|말고|없을|없어|아냐|not)/.test(text)) return false;
+    return answers.some(answer => {
+      const a = cleanText(answer);
+      return a.length >= 2 && (clean === a || clean.includes(a));
+    });
+  }
+  function detectIntent(text) {
+    if (/(안\s*돼|못\s*해|싫|바빠|안할|안\s*할|아니|어려워)/.test(text)) return 'no';
+    if (/(응|그래|좋아|당연|도와|찾아|해볼|할게|같이|물론|네|ㅇㅇ)/.test(text)) return 'yes';
+    if (/(정답|혹시|맞혀|이거야|설탕|우유|딸기)/.test(text)) return 'guess';
+    if (/(왜|무슨|어떤|뭐|어디|어떻게|힌트|궁금|알려|\?)/.test(text)) return 'question';
+    if (/(고마워|사랑|최고|힘내|응원|귀엽|보고싶|반가워|안녕)/.test(text)) return 'warm';
     return 'default';
   }
-  function showInfo(unlockedOnly=true){
-    const keys=Object.keys(data.information);const allowed=unlockedOnly?keys.filter(k=>state.unlocked.includes(k)):keys;
-    if(!allowed.length){add('bot','카페 정보는 멤버별 미션을 완료하면 하나씩 열려요! 💙');return;}
-    add('bot',`📮 지금까지 해금한 카페 정보 (${allowed.length}/${keys.length})`);
-    for(const k of allowed){
-      const value=String(data.information[k]||'').trim();
-      add('bot',`${data.infoLabels[k]}\n${value||'아직 운영자가 확정 정보를 입력하지 않았어요.'}`);
-    }
-    const locked=keys.length-allowed.length;
-    if(locked)add('bot',`🔒 아직 ${locked}개 정보가 잠겨 있어요. 멤버 미션을 진행해 주세요!`);
-  }
-  function showItems(){
-    if(!state.items.length){add('bot','🎁 아직 획득한 아이템이 없어요. 멤버 미션을 풀어 볼까요?');return;}
-    const all=members.map(m=>m.mission.item).filter(item=>state.items.includes(item.id));
-    add('system','MY COLLECTION · '+all.length+'/'+members.length);
-    all.forEach(item=>add('bot',`${item.icon} ${item.name}\n${item.description}`));
-    add('bot','※ 이 시제품의 아이템은 브라우저에 저장되는 디지털 보상입니다. 실제 상품 수령권이나 교환권이 아니에요.');
-  }
-  function hint(){
-    if(state.phase==='complete'){add('bot','모든 미션을 완료했어요! 🎉');return;}
-    if(state.phase==='talk'){add('bot','먼저 나와 대화해 보고, 미션이 열리면 힌트를 확인해 줘! 💙');return;}
-    if(state.phase==='cleared'){add('bot','이번 미션은 이미 해결했어! 💛');return;}
-    add('bot',`💡 ${active().mission.hint}`);
-  }
-  function reply(text){
-    const msg=String(text).trim().slice(0,220);if(!msg)return;
-    if(state.phase==='cleared'){add('bot','먼저 아래의 “다음 멤버 만나기” 버튼을 눌러 주세요!');save();render();return;}
-    add('player',msg);
-    if(state.phase==='complete'){
-      add('bot','이미 모든 미션을 클리어했어요! 아래에서 카페 정보와 획득품을 다시 확인할 수 있어요.');
-    }else if(state.phase==='mission'){
-      const mission=active().mission;
-      if(hasMissionAnswer(msg,mission.answers)){
-        add('bot',mission.success);
-        state.cleared.push(active().id);
-        for(const k of mission.infoKeys)if(!state.unlocked.includes(k))state.unlocked.push(k);
-        if(!state.items.includes(mission.item.id))state.items.push(mission.item.id);
-        state.phase='cleared';
-        add('system','MISSION CLEAR · '+active().name);
-        mission.infoKeys.forEach(k=>{
-          const value=String(data.information[k]||'').trim();
-          add('bot',`🔓 ${data.infoLabels[k]} 해금!\n${value||'운영자가 아직 행사 정보를 입력하지 않았어요.'}`);
-        });
-        add('bot',`🎁 ${mission.item.name} 획득!\n${mission.item.description}\n※ 시연용 디지털 아이템 · 실제 교환권 아님`);
+  function isInfoRequest(text) { return /(카페|날짜|일정|위치|주소|특전|상품|굿즈|교환증|영수증|행사|메뉴)/.test(text); }
+  function sendMessage(raw) {
+    const message = String(raw || '').trim().slice(0,180);
+    if (!message || state.phase === 'transition' || state.phase === 'done') return;
+    add('player', message);
+    const member = current();
+    if (state.phase === 'chat') {
+      const intent = detectIntent(message);
+      if (isInfoRequest(message) && !/(재료|찾|어디 있어)/.test(message)) {
+        add('bot', '그건 재료를 찾으면 알려 줄 수 있어. 지금은 우리끼리 이걸 먼저 해결하자! ♡');
       } else {
-        state.attempts++;
-        add('bot',state.attempts>=2?'조금만 더! 아래 ‘미션 힌트’를 눌러봐도 좋아. 💛':'아쉽지만 그건 아니야. 다시 자유롭게 답해 봐!');
+        const pool = member.conversational[intent] || member.conversational.default;
+        add('bot', pool[state.chatTurns % pool.length]);
+      }
+      state.chatTurns++;
+      if (state.chatTurns >= 2) {
+        state.phase = 'riddle';
+        add('system', '작은 단서 하나를 발견했어요 ✦');
+        member.clue.forEach(line => add('bot', line));
+      }
+    } else if (/^(힌트|도움|모르겠어|모르겠음|help|모르겠는데)[!?.\s]*$/i.test(message)) {
+      add('bot', '쉿, 힌트 알려 줄게. ' + member.hint);
+    } else if (matchesAnswer(message, member.answers)) {
+      member.success.forEach(line => add('bot', line));
+      if (!state.collected.includes(member.id)) state.collected.push(member.id);
+      const clue = member.reveal;
+      const actual = String(story.cafe[clue.key] || '').trim();
+      add('system', `♡ 발견한 쪽지 · ${clue.label}`);
+      add('bot', actual || clue.fallback);
+      add('bot', member.bridge);
+      if (state.memberIndex === members.length - 1) {
+        state.phase = 'done';
+        story.completion.forEach(line => add('bot', line));
+        ensureReceipt();
+      } else {
+        state.phase = 'transition';
       }
     } else {
-      const member=active();
-      const kind=intent(msg),pool=member.replies[kind]||member.replies.default;
-      const idx=(state.turns+state.memberIndex)%pool.length;
-      add('bot',pool[idx]);state.turns++;
-      state.history.push(kind);if(state.history.length>40)state.history.shift();
-      if(state.turns===2)add('system',`✨ ${member.name}의 미션에 도전할 수 있어요!`);
+      const idx = Math.min(state.tries, member.fail.length - 1);
+      add('bot', member.fail[idx]);
+      state.tries++;
+      if (state.tries >= 3 && state.tries % 2 === 1) add('bot', '작게 알려 줄까? 대화창에 “힌트”라고 입력해 봐.');
     }
-    save();render();
+    persist();
+    render();
   }
-  function startMission(){
-    if(state.phase!=='talk'||state.turns<2)return;
-    state.phase='mission';state.attempts=0;
-    add('system',active().mission.title);
-    add('bot',active().mission.prompt);
-    save();render();
+  function advance() {
+    if (state.phase !== 'transition') return;
+    state.memberIndex++;
+    state.phase = 'chat';
+    state.chatTurns = 0;
+    state.tries = 0;
+    add('system', `${current().name}님이 대화에 참여했습니다`);
+    current().opening.forEach(line => add('bot', line));
+    persist();
+    render();
   }
-  function next(){
-    if(state.phase!=='cleared')return;
-    if(state.memberIndex===members.length-1){
-      state.phase='complete';
-      data.ending.forEach((t,i)=>add(i===0?'system':'bot',t));
-      add('bot','🎁 내 획득품에서 모은 아이템을 확인해 봐!');
-    }else{
-      state.memberIndex++;state.phase='talk';state.turns=0;state.attempts=0;
-      add('system',`CHAPTER ${String(state.memberIndex+1).padStart(2,'0')} · ${active().name}`);
-      active().opening.forEach(t=>add('bot',t));
+  function ensureReceipt() {
+    if (state.receiptId) return;
+    // 이 번호는 이용자 브라우저에서 만들어지는 시연용 ID이며 위조·중복사용 방지 기능이 없습니다.
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint8Array(8);
+    if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random()*256);
+    state.receiptId = 'DEMO-' + Array.from(bytes, n => chars[n % chars.length]).join('');
+    state.issuedAt = new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  }
+  function create(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function renderButtons() {
+    const dest = $('story-control'); dest.replaceChildren();
+    if (state.phase !== 'transition' && state.phase !== 'done') return;
+    const wrap = create('div', 'story-inline');
+    if (state.phase === 'transition') {
+      const button = create('button', '', '답장 이어가기 →');
+      button.type = 'button'; button.addEventListener('click', advance);
+      wrap.append(button);
+    } else {
+      const button = create('button', 'ticket-trigger', '✉️ 도착한 봉투 열기');
+      button.type = 'button'; button.addEventListener('click', showTicket);
+      wrap.append(button);
+      wrap.append(create('div', 'story-mini-note', '끝까지 함께해 줘서 고마워요 ♡'));
     }
-    save();render();
+    dest.append(wrap);
   }
-  function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
-  function button(label,onClick,primary=false){const e=el('button',primary?'primary':'',label);e.type='button';e.addEventListener('click',onClick);return e;}
-  function renderActions(){
-    const dest=$('story-actions');dest.replaceChildren();
-    if(state.phase==='talk'&&state.turns<2)return;
-    const box=el('section','action-box');
-    function top(flag,title,description){box.append(el('span','action-label',flag),el('div','action-title',title),el('div','action-description',description));}
-    if(state.phase==='talk'){
-      top('MISSION OPEN ✨',active().mission.title,'자유대화를 더 이어가도 좋고, 지금 미션을 시작할 수도 있어요.');
-      box.append(button('미션 시작하기 →',startMission,true));
-    }else if(state.phase==='mission'){
-      top('TYPE YOUR ANSWER ✏️',active().mission.title,'아래 채팅 입력창에 정답을 자유롭게 적어 보내세요.');
-      box.append(button('💡 힌트 보기',()=>{hint();save();render();}));
-    }else if(state.phase==='cleared'){
-      top('MISSION CLEAR! 🎉','멤버의 선물을 받았어요','카페 정보와 디지털 아이템이 해금됐어요.');
-      box.append(button(state.memberIndex===members.length-1?'결말 메시지 보기 →':'다음 멤버 만나기 →',next,true));
-    }else{
-      top('ALL CLEAR 💙💛🤍','세 개의 미션 성공!','카페 정보와 아이템을 모두 해금했어요.');
-      box.append(button('🎁 내 획득품 확인',()=>{showItems();save();render();}));
+  function render() {
+    const person = current();
+    $('profile-emoji').textContent = person.avatar;
+    $('profile-name').textContent = person.name;
+    $('profile-status').textContent = person.subtitle;
+    document.title = `${story.siteTitle} · ${person.name}`;
+    const messages = $('messages'); messages.replaceChildren();
+    const fragment = document.createDocumentFragment();
+    for (const line of state.messages) {
+      const row = create('div', 'message ' + line.role);
+      if (line.role === 'bot') row.append(create('div', 'message-avatar', members.find(m => m.id === line.memberId)?.avatar || person.avatar));
+      row.append(create('div', 'bubble', line.text)); fragment.append(row);
     }
-    dest.append(box);
+    messages.append(fragment); renderButtons();
+    const disabled = ['transition','done'].includes(state.phase);
+    $('reply-input').disabled = disabled;
+    $('send-button').disabled = disabled;
+    $('reply-input').placeholder = state.phase === 'riddle' ? '답을 자유롭게 입력해 주세요 (힌트 가능)' : disabled ? '채팅 속 버튼을 눌러 주세요' : '메시지를 입력해 주세요';
+    $('footer-caption').textContent = state.phase === 'riddle' ? 'a tiny clue is waiting ♡' : 'type a message ✿';
+    const scroll = $('conversation'); scroll.scrollTop = scroll.scrollHeight;
   }
-  function render(){
-    const member=active();
-    $('character-name').textContent=member.name;
-    $('character-subtitle').textContent=member.subtitle;
-    $('profile-avatar').textContent=member.avatar;
-    $('chat-title').textContent='♡  '+data.title;
-    $('chapter-label').textContent=state.phase==='complete'?'ALL CLEAR':`MISSION ${String(state.memberIndex+1).padStart(2,'0')} / ${String(members.length).padStart(2,'0')}`;
-    const progress=$('member-progress');progress.replaceChildren();
-    members.forEach((m,i)=>{const done=state.cleared.includes(m.id);progress.append(el('div',`member-dot ${done?'done':i===state.memberIndex?'active':''}`,`${done?'✓':m.avatar} ${m.name}`));});
-    const dest=$('messages');dest.replaceChildren();const f=document.createDocumentFragment();
-    for(const m of state.messages){
-      const row=el('div','message '+m.role);
-      if(m.role==='bot')row.append(el('div','message-avatar',members.find(x=>x.id===m.memberId)?.avatar||member.avatar));
-      row.append(el('div','bubble',m.text));f.append(row);
-    }
-    dest.append(f);renderActions();
-    const disabled=state.phase==='cleared'||state.phase==='complete';
-    $('message-input').disabled=disabled;$('send-button').disabled=disabled;
-    $('message-input').placeholder=state.phase==='mission'?'미션 정답을 자유롭게 입력해 주세요 ♡':disabled?'다음 장면으로 이동해 주세요':'멤버에게 자유롭게 답장해 주세요 ♡';
-    $('quick-hint').disabled=state.phase==='complete';
-    $('quick-hello').disabled=disabled||state.phase==='mission';
-    $('thread').scrollTop=$('thread').scrollHeight;
+
+  const ticketDialog = $('ticket-dialog');
+  function populateTicket() {
+    ensureReceipt();
+    $('ticket-number').textContent = state.receiptId;
+    $('ticket-date').textContent = state.issuedAt;
+    $('ticket-ingredients').textContent = '설탕 · 우유 · 딸기';
+    $('ticket-gift').textContent = story.receipt.gift;
+    $('ticket-message').textContent = story.receipt.message;
+    persist();
   }
-  function answerQuick(fn){fn();save();render();}
-  function toggleMenu(open){$('popup-menu').hidden=!open;$('menu-toggle').setAttribute('aria-expanded',open?'true':'false');}
-  $('menu-toggle').addEventListener('click',()=>toggleMenu($('popup-menu').hidden));
-  document.addEventListener('click',e=>{if(!e.target.closest('.popup-menu')&&!e.target.closest('.menu-toggle'))toggleMenu(false);});
-  $('chat-form').addEventListener('submit',e=>{e.preventDefault();reply($('message-input').value);$('message-input').value='';$('message-input').focus();});
-  $('quick-hello').addEventListener('click',()=>reply('안녕! 반가워.'));
-  $('quick-hint').addEventListener('click',()=>answerQuick(hint));
-  $('quick-info').addEventListener('click',()=>answerQuick(()=>showInfo(true)));
-  $('quick-items').addEventListener('click',()=>answerQuick(showItems));
-  $('save-reset').addEventListener('click',()=>{toggleMenu(false);if(!confirm('대화와 해금한 아이템을 모두 지우고 처음부터 시작할까요?'))return;init();render();});
-  $('save-export').addEventListener('click',()=>{toggleMenu(false);const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='cp-cafe-mission-save.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-  $('save-import').addEventListener('click',()=>{$('save-file').click();toggleMenu(false);});
-  $('save-file').addEventListener('change',async e=>{
-    const file=e.target.files?.[0];e.target.value='';if(!file)return;
-    if(file.size>1000000){alert('1MB 이하 JSON 파일만 불러올 수 있습니다.');return;}
-    try{const parsed=safeSave(JSON.parse(await file.text()));if(!parsed)throw Error('invalid');if(!confirm('현재 진행 기록을 불러온 저장 파일로 바꾸시겠어요?'))return;state=parsed;save();render();}
-    catch(_){alert('읽을 수 없는 저장 파일입니다.');}
+  function showTicket() {
+    if (state.phase !== 'done') return;
+    populateTicket();
+    state.receiptOpened = true; persist();
+    ticketDialog.showModal();
+  }
+  function saveFile(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const anchor = create('a'); anchor.href = url; anchor.download = filename;
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+  // 임시 교환증 PNG는 완전히 브라우저에서 생성합니다. 실제 상품 교환권의 보안 기능은 없습니다.
+  async function downloadTicket() {
+    if (state.phase !== 'done') return;
+    populateTicket();
+    if (document.fonts?.ready) await document.fonts.ready;
+    const canvas = document.createElement('canvas'); canvas.width = 900; canvas.height = 1250;
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    const w = 900;
+    const rounded = (x,y,width,height,r,fill,stroke) => {
+      ctx.beginPath();ctx.roundRect(x,y,width,height,r);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=3;ctx.stroke();}
+    };
+    ctx.fillStyle = '#e9f5ff'; ctx.fillRect(0,0,900,1250);
+    for(let y=0;y<1250;y+=180){for(let x=0;x<900;x+=180){if(((x+y)/180)%2===0){ctx.fillStyle='#fff5d8';ctx.fillRect(x,y,180,180);}}}
+    rounded(75,55,750,1140,40,'#fffefa','#87bbe1');
+    rounded(105,90,690,1070,23,'#fffefa','#b3d9ed');
+    const write=(t,y,size,color='#2f6e9b',weight='700')=>{ctx.textAlign='center';ctx.fillStyle=color;ctx.font=`${weight} ${size}px "Noto Sans KR", "Malgun Gothic", sans-serif`;ctx.fillText(t,w/2,y)};
+    write('♡ A LITTLE GIFT FOR YOU ♡',185,23,'#7baed2','800');
+    write('✿  ✦  ✿',245,40,'#e4bb57');
+    write('선물 교환증',332,59,'#367fb2','900');
+    write('잃어버린 레시피를 완성해 주셔서 고마워요!',393,25,'#668ca8','500');
+    rounded(300,440,300,137,16,'#e9f6ff','#83bde4');
+    write('MISSION COMPLETE',495,27,'#428bc0','900');write('✓',550,45,'#4caa80','900');
+    const rows=[['찾은 재료','설탕 · 우유 · 딸기'],['선물',story.receipt.gift],['발행 번호',state.receiptId],['발행일',state.issuedAt]];
+    let y=645;for(const [label,value] of rows){ctx.strokeStyle='#c4dfed';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(160,y+29);ctx.lineTo(740,y+29);ctx.stroke();ctx.textAlign='left';ctx.fillStyle='#84a4bc';ctx.font='500 23px "Noto Sans KR", "Malgun Gothic", sans-serif';ctx.fillText(label,160,y);ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font='bold 24px "Noto Sans KR", "Malgun Gothic", sans-serif';let shown=String(value);if(ctx.measureText(shown).width>380){ctx.font='bold 19px "Noto Sans KR", "Malgun Gothic", sans-serif';}if(ctx.measureText(shown).width>420){shown=shown.slice(0,18)+'…';}ctx.fillText(shown,740,y);y+=92;}
+    write('✦  ✦  ✦',1030,28,'#edc267');
+    write('시연용 · 실제 현장 교환권이 아닙니다',1090,22,'#996c3f','700');
+    canvas.toBlob(blob => {if(blob)saveFile(blob,'선물교환증_시연용.png');},'image/png');
+  }
+
+  function toggleSettings(open) {
+    $('settings-menu').hidden = !open;
+    $('settings-button').setAttribute('aria-expanded',String(open));
+  }
+  $('settings-button').addEventListener('click',() => toggleSettings($('settings-menu').hidden));
+  document.addEventListener('click',event => {if(!event.target.closest('.settings-menu')&&!event.target.closest('.menu-button'))toggleSettings(false);});
+  $('chat-form').addEventListener('submit',event => {
+    event.preventDefault(); const input=$('reply-input'); const text=input.value;input.value='';sendMessage(text);if(!input.disabled)input.focus();
   });
-  save();render();
+  $('ticket-close').addEventListener('click',() => ticketDialog.close());
+  ticketDialog.addEventListener('click',event => {if(event.target===ticketDialog)ticketDialog.close();});
+  $('ticket-download').addEventListener('click',downloadTicket);
+  $('ticket-print').addEventListener('click',() => window.print());
+  $('reset-game').addEventListener('click',() => {toggleSettings(false);if(!confirm('지금까지의 대화와 교환증을 지우고 처음부터 시작할까요?'))return;initialize();render();});
+  $('save-export').addEventListener('click',() => {toggleSettings(false);saveFile(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),'cp-cafe-story-save.json');});
+  $('save-import').addEventListener('click',() => {toggleSettings(false);$('save-file').click();});
+  $('save-file').addEventListener('change',async event => {
+    const file=event.target.files?.[0];event.target.value='';if(!file)return;
+    if(file.size>500000){alert('500KB 이하 저장 파일만 불러올 수 있습니다.');return;}
+    try {const imported=validate(JSON.parse(await file.text()));if(!imported)throw Error('invalid');if(!confirm('현재 진행 기록을 불러온 파일로 바꿀까요?'))return;state=imported;persist();render();}
+    catch(_){alert('저장 파일을 읽을 수 없습니다.');}
+  });
+  render();
 })();
