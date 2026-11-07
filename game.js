@@ -142,10 +142,27 @@
     requiredLines(currentItem(),'onStart');
     persist();render();
   }
+  // After event information has been filled in, replace previous placeholder replies
+  // in already-completed conversations without resetting the player's progress.
+  function refreshUnlockedCafeMessages() {
+    if(!state?.started)return;
+    for(const member of members){
+      if(!state.completedMembers.includes(member.id))continue;
+      const unlock=member.cafeUnlock;
+      const info=String(story.cafe?.[unlock.key]||'').trim();
+      if(!info)continue;
+      for(const message of state.messages){
+        if(message.role==='bot'&&message.memberId===member.id&&message.text===unlock.fallback){
+          message.text=info;
+        }
+      }
+    }
+  }
   function initialLoad() {
     try {const raw=localStorage.getItem(STORAGE_KEY);state=raw?validate(JSON.parse(raw)):null;}
     catch(_){storageEnabled=false;}
     if(!state)state=newState();
+    refreshUnlockedCafeMessages();
     persist(); // Immediately save randomized/migrated selections for stable refreshes.
   }
   initialLoad();
@@ -422,7 +439,7 @@
   $('save-import').addEventListener('click',()=>{toggleSettings(false);$('save-file').click();});
   $('save-file').addEventListener('change',async e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;
     if(f.size>800000){alert('800KB 이하의 저장 파일만 읽을 수 있습니다.');return;}
-    try {const imported=validate(JSON.parse(await f.text()));if(!imported)throw Error('invalid');if(!confirm('지금 진행 기록을 저장 파일로 바꿀까요?'))return;state=imported;persist();render();}
+    try {const imported=validate(JSON.parse(await f.text()));if(!imported)throw Error('invalid');if(!confirm('지금 진행 기록을 저장 파일로 바꿀까요?'))return;state=imported;refreshUnlockedCafeMessages();persist();render();}
     catch(_){alert('저장 파일을 읽을 수 없습니다.');}
   });
   render();
