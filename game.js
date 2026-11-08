@@ -13,6 +13,16 @@
   const STORAGE_KEY = 'cp-cafe-lost-recipe-v4'; // 기존 저장 기록 유지
   // 닷홈 DB에서 발급한 순번만 화면에 표시합니다. 로컬 생성 번호는 발급하지 않습니다.
   const RECEIPT_PATTERN = /^GOMBAB-[0-9]{6,}$/;
+  // 럭키 번호 설정: 다른 숫자를 추가할 때 닷홈 issue.php 의 목록도 함께 변경하세요.
+  const LUCKY_NUMBERS = new Set([4, 8, 12, 16, 19, 25, 28]);
+  const LUCKY_GIFT = '럭키넘버 특별 선물';
+  const LUCKY_MESSAGE = '축하합니다! 럭키넘버에 당첨되셨어요 ♡';
+  function isLuckyReceipt(receiptId) {
+    if (!RECEIPT_PATTERN.test(String(receiptId || ''))) return false;
+    const n = Number(String(receiptId).slice('GOMBAB-'.length));
+    return Number.isSafeInteger(n) && LUCKY_NUMBERS.has(n);
+  }
+
   const TICKET_API_URL = String(window.GOMBAB_TICKET_API_URL || '').trim();
   const PHASES = ['talk','search','solve','found','member_done','finished'];
   let state;
@@ -342,21 +352,10 @@
             completed_members:state.completedMembers})
         });
         let data=null;
-        try {data=await resp.json();} catch(_) { /* HTTP 오류 또는 JSON이 아닌 응답 */ }
-        if (!resp.ok) {
-          const statusHint = ({
-            403:'GitHub 출처가 차단됐습니다. 닷홈 private-config.php의 allowed_origin을 확인하세요.',
-            404:'닷홈에서 issue.php 파일을 찾을 수 없습니다. ticket-config.js의 주소와 업로드 경로를 확인하세요.',
-            405:'서버가 POST 요청을 받지 못했습니다. issue.php 배포 상태를 확인하세요.',
-            422:'서버가 완료 기록을 인정하지 않았습니다. 게임 진행 데이터와 PHP 버전을 확인하세요.',
-            500:'닷홈 PHP 오류입니다. PHP 버전과 .htaccess 설정을 확인하세요.',
-            503:'닷홈 발급 서버의 DB 설정 또는 setup.sql 실행 여부를 확인하세요.'
-          })[resp.status] || '닷홈 서버 응답을 확인해 주세요.';
-          throw new Error(`HTTP ${resp.status}: ${statusHint}`);
-        }
-        if(!data?.ok || !RECEIPT_PATTERN.test(data.number) ||
+        try {data=await resp.json();} catch(_) { /* HTTP error or non-JSON response */ }
+        if(!resp.ok || !data?.ok || !RECEIPT_PATTERN.test(data.number) ||
            typeof data.issuedAt !== 'string'){
-          throw new Error('서버 응답 형식이 맞지 않습니다. issue.php 파일이 최신 버전인지 확인하세요.');
+          throw Error(data?.message || '발급 서버에 연결하지 못했습니다.');
         }
         // 플레이를 초기화한 사이 과거 발급 응답이 도착해도 새 기록에 섞지 않습니다.
         if(state.clientId!==requestedId || !isCompleted())return false;
@@ -366,11 +365,8 @@
         persist();
         return true;
       } catch(err) {
-        if(state.clientId===requestedId) {
-          ticketError = err instanceof TypeError
-            ? '닷홈 서버 통신이 차단됐습니다. HTTPS 접속과 private-config.php의 allowed_origin(CORS)을 확인해 주세요.'
-            : String(err?.message || '발급 요청에 실패했습니다.').slice(0,220);
-        }
+        if(state.clientId===requestedId)
+          ticketError='번호를 받지 못했어요. 네트워크와 서버 설정을 확인하고 다시 시도해 주세요.';
         console.error('교환증 번호 발급 실패:',err);
         return false;
       }
@@ -465,12 +461,18 @@
 
   const dialog=$('ticket-dialog');
   function ingredientsSummary(){return `${state.collected.length}개 · 영곰훠궈 / 필곰김밥 / 도곰라멘`;}
-  function populateTicket(){$('ticket-nickname').textContent=state.nickname;
-    $('ticket-number').textContent=state.receiptId;
-    $('ticket-date').textContent=state.issuedAt;
-    $('ticket-ingredients').textContent=ingredientsSummary();
-    $('ticket-gift').textContent=story.receipt.gift;
-    $('ticket-message').textContent=story.receipt.message;persist();
+  function populateTicket(){
+    const lucky = isLuckyReceipt(state.receiptId);
+    $('print-ticket').classList.toggle('is-lucky', lucky);
+    $('ticket-lucky-badge').hidden = !lucky;
+    $('ticket-title').textContent = lucky ? '럭키 선물 교환증' : '선물 교환증';
+    $('ticket-nickname').textContent = state.nickname;
+    $('ticket-number').textContent = state.receiptId;
+    $('ticket-date').textContent = state.issuedAt;
+    $('ticket-ingredients').textContent = ingredientsSummary();
+    $('ticket-gift').textContent = lucky ? LUCKY_GIFT : story.receipt.gift;
+    $('ticket-message').textContent = lucky ? LUCKY_MESSAGE : story.receipt.message;
+    persist();
   }
   async function openTicket(){
     if(!isCompleted()) return;
@@ -486,21 +488,25 @@
     populateTicket();if(document.fonts?.ready)await document.fonts.ready;
     const canvas=document.createElement('canvas');canvas.width=900;canvas.height=1220;
     const ctx=canvas.getContext('2d');if(!ctx)return;
-    ctx.fillStyle='#e9f5ff';ctx.fillRect(0,0,900,1220);
+    const lucky = isLuckyReceipt(state.receiptId);
+    ctx.fillStyle=lucky?'#fff4cc':'#e9f5ff';ctx.fillRect(0,0,900,1220);
     for(let y=0;y<1220;y+=180)for(let x=0;x<900;x+=180)if(((x+y)/180)%2===0){ctx.fillStyle='#fff5d8';ctx.fillRect(x,y,180,180);}
     function box(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=3;ctx.stroke();}
-    box(75,55,750,1100,35,'#fffefa','#87bbe1');box(105,90,690,1030,21,'#fffefa','#b3d9ed');
+    box(75,55,750,1100,35,'#fffefa',lucky?'#eac55d':'#87bbe1');box(105,90,690,1030,21,'#fffefa',lucky?'#f5d780':'#b3d9ed');
     function line(text,y,size,color='#316f9a',weight='700'){
       ctx.textAlign='center';ctx.fillStyle=color;ctx.font=`${weight} ${size}px "Noto Sans KR","Malgun Gothic",sans-serif`;
       ctx.fillText(text,450,y,620);
     }
-    line('♡ A LITTLE GIFT FOR YOU ♡',182,25,'#78acd2','800');line('✿  ✦  ✿',240,39,'#e4bb57');
-    line('선물 교환증',320,60,'#367fb2','900');line('세 가지 요리의 재료를 모두 찾았어요!',393,26,'#668ca8','500');
-    box(300,440,300,125,16,'#e9f6ff','#83bde4');line('MISSION COMPLETE',488,27);line('✓',542,42,'#4caa80');
-    const rows=[['닉네임',state.nickname],['찾은 재료',`${state.collected.length}개 모두 완료`],['선물',story.receipt.gift],['발급번호',state.receiptId],['발행일',state.issuedAt]];
+    line(lucky?'★ CONGRATULATIONS ★':'♡ A LITTLE GIFT FOR YOU ♡',182,25,lucky?'#b58a23':'#78acd2','800');
+    line('✿  ✦  ✿',240,39,'#e4bb57');
+    line(lucky?'럭키 선물 교환증':'선물 교환증',320,lucky?54:60,'#367fb2','900');
+    line(lucky?'럭키넘버 당첨! 특별 선물을 확인하세요':'세 가지 요리의 재료를 모두 찾았어요!',393,26,'#668ca8','500');
+    box(300,440,300,125,16,lucky?'#fff2bb':'#e9f6ff',lucky?'#dfae35':'#83bde4');
+    line(lucky?'LUCKY NUMBER':'MISSION COMPLETE',488,27);line(lucky?'★':'✓',542,42,lucky?'#ce9633':'#4caa80');
+    const rows=[['닉네임',state.nickname],['찾은 재료',`${state.collected.length}개 모두 완료`],['선물',lucky?LUCKY_GIFT:story.receipt.gift],['발급번호',state.receiptId],['발행일',state.issuedAt]];
     let y=625;for(const [key,val]of rows){ctx.beginPath();ctx.strokeStyle='#c4dfed';ctx.moveTo(160,y+25);ctx.lineTo(740,y+25);ctx.stroke();ctx.textAlign='left';ctx.fillStyle='#84a4bc';ctx.font='500 23px "Noto Sans KR","Malgun Gothic",sans-serif';ctx.fillText(key,160,y);
       ctx.textAlign='right';ctx.fillStyle='#315e7b';ctx.font=`bold ${key==='발급번호'?19:23}px "Noto Sans KR","Malgun Gothic",sans-serif`;ctx.fillText(String(val),740,y,460);y+=84;}
-    line('✦  ✦  ✦',1040,28,'#edc267');line('곰밥집을 도와줘서 고마워요 ♡',1090,22,'#996c3f');
+    line('✦  ✦  ✦',1040,28,'#edc267');line(lucky?LUCKY_MESSAGE:'곰밥집을 도와줘서 고마워요 ♡',1090,22,'#996c3f');
     canvas.toBlob(blob=>{if(blob)saveFile(blob,`곰밥집_선물교환증_${state.receiptId}.png`);},'image/png');
   }
   function toggleSettings(open){$('settings-menu').hidden=!open;$('settings-button').setAttribute('aria-expanded',String(open));}
