@@ -342,10 +342,21 @@
             completed_members:state.completedMembers})
         });
         let data=null;
-        try {data=await resp.json();} catch(_) { /* HTTP error or non-JSON response */ }
-        if(!resp.ok || !data?.ok || !RECEIPT_PATTERN.test(data.number) ||
+        try {data=await resp.json();} catch(_) { /* HTTP 오류 또는 JSON이 아닌 응답 */ }
+        if (!resp.ok) {
+          const statusHint = ({
+            403:'GitHub 출처가 차단됐습니다. 닷홈 private-config.php의 allowed_origin을 확인하세요.',
+            404:'닷홈에서 issue.php 파일을 찾을 수 없습니다. ticket-config.js의 주소와 업로드 경로를 확인하세요.',
+            405:'서버가 POST 요청을 받지 못했습니다. issue.php 배포 상태를 확인하세요.',
+            422:'서버가 완료 기록을 인정하지 않았습니다. 게임 진행 데이터와 PHP 버전을 확인하세요.',
+            500:'닷홈 PHP 오류입니다. PHP 버전과 .htaccess 설정을 확인하세요.',
+            503:'닷홈 발급 서버의 DB 설정 또는 setup.sql 실행 여부를 확인하세요.'
+          })[resp.status] || '닷홈 서버 응답을 확인해 주세요.';
+          throw new Error(`HTTP ${resp.status}: ${statusHint}`);
+        }
+        if(!data?.ok || !RECEIPT_PATTERN.test(data.number) ||
            typeof data.issuedAt !== 'string'){
-          throw Error(data?.message || '발급 서버에 연결하지 못했습니다.');
+          throw new Error('서버 응답 형식이 맞지 않습니다. issue.php 파일이 최신 버전인지 확인하세요.');
         }
         // 플레이를 초기화한 사이 과거 발급 응답이 도착해도 새 기록에 섞지 않습니다.
         if(state.clientId!==requestedId || !isCompleted())return false;
@@ -355,8 +366,11 @@
         persist();
         return true;
       } catch(err) {
-        if(state.clientId===requestedId)
-          ticketError='번호를 받지 못했어요. 네트워크와 서버 설정을 확인하고 다시 시도해 주세요.';
+        if(state.clientId===requestedId) {
+          ticketError = err instanceof TypeError
+            ? '닷홈 서버 통신이 차단됐습니다. HTTPS 접속과 private-config.php의 allowed_origin(CORS)을 확인해 주세요.'
+            : String(err?.message || '발급 요청에 실패했습니다.').slice(0,220);
+        }
         console.error('교환증 번호 발급 실패:',err);
         return false;
       }
