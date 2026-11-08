@@ -11,13 +11,23 @@
   const requiredCount = member => Math.min(member.ingredients.length, Math.max(1,
     Number.isInteger(member.requiredIngredients) ? member.requiredIngredients : member.ingredients.length));
   const STORAGE_KEY = 'cp-cafe-lost-recipe-v4'; // 기존 저장 기록 유지
-  // 서버 없이 생성하는 임의 발급번호: 예) GB-A1B2-C3D4-E5F6-7890
-  // 번호 자체는 충분히 무작위지만, 서로 다른 기기의 중복 발급/현장 사용 여부를 확인하지는 못합니다.
-  const RECEIPT_PATTERN = /^GB-(?:[0-9A-F]{4}-){3}[0-9A-F]{4}$/;
+  // 닷홈 DB에서 발급한 순번만 화면에 표시합니다. 로컬 생성 번호는 발급하지 않습니다.
+  const RECEIPT_PATTERN = /^GOMBAB-[0-9]{6,}$/;
+  const TICKET_API_URL = String(window.GOMBAB_TICKET_API_URL || '').trim();
   const PHASES = ['talk','search','solve','found','member_done','finished'];
   let state;
   let storageEnabled = true;
   let selectedMemberId = null;
+  let pendingTicket = null;
+  let ticketError = '';
+
+  function makeClientId() {
+    if (!globalThis.crypto?.getRandomValues) throw Error('고유 발급용 안전한 ID 생성에 HTTPS가 필요합니다.');
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  const validClientId = id => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id);
 
   function randomNumber(max) {
     if (globalThis.crypto?.getRandomValues) {
@@ -44,16 +54,17 @@
     return members.flatMap(m=>(s.selectedIngredients[m.id]||[]).map(id=>`${m.id}:${id}`));
   }
   function newState() {
-    return {version:7,started:false,nickname:'',currentMemberId:null,completedMembers:[],
+    return {version:8,clientId:makeClientId(),started:false,nickname:'',currentMemberId:null,completedMembers:[],
       selectedIngredients:Object.fromEntries(members.map(m=>[m.id,randomIngredients(m)])),
       collected:[],itemIndex:0,phase:'talk',talkTurns:0,wrongSearch:0,wrongAnswer:0,hintsSeen:0,
       messages:[],receiptId:null,issuedAt:null};
   }
   function validate(raw) {
-    if (!raw || ![4,5,6,7].includes(raw.version) || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
+    if (!raw || ![4,5,6,7,8].includes(raw.version) || !PHASES.includes(raw.phase) || !Array.isArray(raw.messages) ||
       typeof raw.nickname !== 'string' || raw.nickname.length > 12 ||
       !Array.isArray(raw.collected) || !Array.isArray(raw.completedMembers)) return null;
     const result=newState();
+    if(validClientId(raw.clientId)) result.clientId=raw.clientId;
     result.started=!!raw.started;
     result.nickname=raw.nickname.trim().slice(0,12);
     result.currentMemberId=validIds.includes(raw.currentMemberId)?raw.currentMemberId:null;
@@ -101,7 +112,7 @@
     result.messages=[...result.messages,...raw.messages.filter(m=>m&&['bot','player','system'].includes(m.role)&&typeof m.text==='string')
       .slice(-280).map(m=>({role:m.role,text:m.text.slice(0,800),memberId:validIds.includes(m.memberId)?m.memberId:result.currentMemberId}))].slice(-280);
     if(result.phase==='finished'){
-      // 구버전 DEMO 번호는 보관하지 않고, 완료 기록은 유지한 채 새 형식으로 발급합니다.
+      // 구버전 브라우저 난수 번호는 폐기하고, 완료 기록을 유지한 채 닷홈 서버에서 순번을 발급합니다.
       result.receiptId=typeof raw.receiptId==='string'&&RECEIPT_PATTERN.test(raw.receiptId)?raw.receiptId:null;
       result.issuedAt=typeof raw.issuedAt==='string'&&raw.issuedAt.length<40?raw.issuedAt:null;
     }
@@ -298,23 +309,61 @@
     if(state.completedMembers.length===members.length){
       state.phase='finished';
       story.completion.forEach(line=>say('bot',line));
-      ensureReceipt();
+      void ensureReceipt();
     }else{
       state.phase='member_done';
       say('bot',sceneLine('otherMembers','아직 다른 주방에서도 연락이 왔대. 누구에게 먼저 답장할까?'));
     }
   }
-  function ensureReceipt(){
-    if(state.receiptId && RECEIPT_PATTERN.test(state.receiptId)) return;
-    // 64-bit random number: extremely low collision risk for a small event,
-    // but no global uniqueness/one-person-one-code guarantee without a backend.
-    const bytes=new Uint8Array(8);
-    if(globalThis.crypto?.getRandomValues)globalThis.crypto.getRandomValues(bytes);
-    else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);
-    const hex=Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('').toUpperCase();
-    state.receiptId='GB-'+hex.match(/.{4}/g).join('-');
-    state.issuedAt=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-    persist();
+  function isCompleted() {
+    return state.phase === 'finished' &&
+      state.collected.length === allSelectedKeys(state).length &&
+      state.completedMembers.length === members.length;
+  }
+  async function ensureReceipt() {
+    if (!isCompleted()) return false;
+    if (state.receiptId && RECEIPT_PATTERN.test(state.receiptId)) return true;
+    if (pendingTicket) return pendingTicket;
+    if (!/^https:\/\//i.test(TICKET_API_URL) || TICKET_API_URL.includes('YOUR-ID')) {
+      ticketError='운영자가 닷홈 발급 서버 주소를 아직 설정하지 않았습니다.';
+      renderControls();
+      return false;
+    }
+    ticketError='';
+    const requestedId=state.clientId;
+    pendingTicket=(async()=>{
+      try {
+        const resp=await fetch(TICKET_API_URL, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          cache:'no-store',
+          body:JSON.stringify({client_id:requestedId,nickname:state.nickname,
+            completed:true,found_count:state.collected.length,
+            completed_members:state.completedMembers})
+        });
+        let data=null;
+        try {data=await resp.json();} catch(_) { /* HTTP error or non-JSON response */ }
+        if(!resp.ok || !data?.ok || !RECEIPT_PATTERN.test(data.number) ||
+           typeof data.issuedAt !== 'string'){
+          throw Error(data?.message || '발급 서버에 연결하지 못했습니다.');
+        }
+        // 플레이를 초기화한 사이 과거 발급 응답이 도착해도 새 기록에 섞지 않습니다.
+        if(state.clientId!==requestedId || !isCompleted())return false;
+        state.receiptId=data.number;
+        state.issuedAt=data.issuedAt;
+        ticketError='';
+        persist();
+        return true;
+      } catch(err) {
+        if(state.clientId===requestedId)
+          ticketError='번호를 받지 못했어요. 네트워크와 서버 설정을 확인하고 다시 시도해 주세요.';
+        console.error('교환증 번호 발급 실패:',err);
+        return false;
+      }
+    })();
+    renderControls();
+    try {return await pendingTicket;}
+    finally {pendingTicket=null;renderControls();}
   }
   function create(tag,className,text){
     const el=document.createElement(tag);
@@ -341,8 +390,15 @@
         control(`${m.avatar}  ${m.name}에게 메시지 보내기`,()=>enterMember(m.id));
       }
     }else if(state.phase==='finished'){
-      control('✉️ 도착한 봉투 열기',openTicket,'ticket-trigger');
-      wrap.append(create('div','story-mini-note','모든 재료를 찾은 사람에게만 열린 편지 ♡'));
+      if(state.receiptId && RECEIPT_PATTERN.test(state.receiptId)) {
+        control('✉️ 도착한 봉투 열기',openTicket,'ticket-trigger');
+        wrap.append(create('div','story-mini-note','모든 재료를 찾은 사람에게만 열린 편지 ♡'));
+      } else if(pendingTicket) {
+        wrap.append(create('div','story-mini-note','♡ 발급 순번을 확인하고 있어요…'));
+      } else {
+        control('✉️ 교환증 번호 발급하기',()=>void ensureReceipt(),'ticket-trigger');
+        wrap.append(create('div','story-mini-note',ticketError || '재료 6개 완료! 서버에서 발급 순번을 받아요.'));
+      }
     }
     if(wrap.childElementCount)host.append(wrap);
   }
@@ -395,16 +451,16 @@
 
   const dialog=$('ticket-dialog');
   function ingredientsSummary(){return `${state.collected.length}개 · 영곰훠궈 / 필곰김밥 / 도곰라멘`;}
-  function populateTicket(){
-    ensureReceipt();$('ticket-nickname').textContent=state.nickname;
+  function populateTicket(){$('ticket-nickname').textContent=state.nickname;
     $('ticket-number').textContent=state.receiptId;
     $('ticket-date').textContent=state.issuedAt;
     $('ticket-ingredients').textContent=ingredientsSummary();
     $('ticket-gift').textContent=story.receipt.gift;
     $('ticket-message').textContent=story.receipt.message;persist();
   }
-  function openTicket(){
-    if(state.phase!=='finished'||state.collected.length!==allSelectedKeys(state).length||state.completedMembers.length!==members.length)return;
+  async function openTicket(){
+    if(!isCompleted()) return;
+    if(!(await ensureReceipt())) return;
     populateTicket();dialog.showModal();
   }
   function saveFile(blob,filename){
@@ -412,7 +468,7 @@
     document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
   }
   async function downloadTicket(){
-    if(state.phase!=='finished')return;
+    if(!isCompleted() || !(await ensureReceipt()))return;
     populateTicket();if(document.fonts?.ready)await document.fonts.ready;
     const canvas=document.createElement('canvas');canvas.width=900;canvas.height=1220;
     const ctx=canvas.getContext('2d');if(!ctx)return;
@@ -441,13 +497,14 @@
   dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
   $('ticket-download').addEventListener('click',downloadTicket);
   $('ticket-print').addEventListener('click',()=>window.print());
-  $('reset-game').addEventListener('click',()=>{toggleSettings(false);if(!confirm('대화 기록과 발급번호를 지우고 처음부터 다시 시작할까요?'))return;selectedMemberId=null;$('nickname-input').value='';renderMemberMenu();updateStartButton();state=newState();persist();render();});
+  $('reset-game').addEventListener('click',()=>{toggleSettings(false);if(!confirm('대화 기록과 발급번호를 지우고 처음부터 다시 시작할까요?'))return;selectedMemberId=null;$('nickname-input').value='';renderMemberMenu();updateStartButton();pendingTicket=null;ticketError='';state=newState();persist();render();});
   $('save-export').addEventListener('click',()=>{toggleSettings(false);saveFile(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),'cp-cafe-story-save.json');});
   $('save-import').addEventListener('click',()=>{toggleSettings(false);$('save-file').click();});
   $('save-file').addEventListener('change',async e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;
     if(f.size>800000){alert('800KB 이하의 저장 파일만 읽을 수 있습니다.');return;}
-    try {const imported=validate(JSON.parse(await f.text()));if(!imported)throw Error('invalid');if(!confirm('지금 진행 기록을 저장 파일로 바꿀까요?'))return;state=imported;refreshUnlockedCafeMessages();persist();render();}
+    try {const imported=validate(JSON.parse(await f.text()));if(!imported)throw Error('invalid');if(!confirm('지금 진행 기록을 저장 파일로 바꿀까요?'))return;pendingTicket=null;ticketError='';state=imported;refreshUnlockedCafeMessages();persist();render();if(isCompleted()&&!state.receiptId)void ensureReceipt();}
     catch(_){alert('저장 파일을 읽을 수 없습니다.');}
   });
   render();
+  if(isCompleted()&&!state.receiptId)void ensureReceipt();
 })();
